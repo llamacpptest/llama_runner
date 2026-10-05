@@ -1,0 +1,40 @@
+# PoC: Intel B70 (Battlemage) Vulkan self-hosted CI
+# Mirrors the upstream `gpu-vulkan-intel-linux` job from ci-self-hosted-vulkan.yml,
+# but pinned to our PoC runner's real labels (self-hosted, Linux, X64, ov-llama-dmz-01)
+# instead of the upstream `Intel` label. For the real upstream PR, revert runs-on to
+# [self-hosted, Linux, X64, Intel].
+name: PoC Vulkan B70 (self-hosted)
+
+on:
+  workflow_dispatch:        # manual "Run workflow" button
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/poc-vulkan-b70.yml'
+
+permissions:
+  contents: read
+
+env:
+  GGML_NLOOP: 3
+  GGML_N_THREADS: 1
+  LLAMA_ARG_LOG_COLORS: 1
+  LLAMA_ARG_LOG_PREFIX: 1
+  LLAMA_ARG_LOG_TIMESTAMPS: 1
+
+jobs:
+  gpu-vulkan-intel-b70:
+    runs-on: [self-hosted, Linux, X64, ov-llama-dmz-01]
+
+    steps:
+      - name: Clone
+        id: checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Test
+        id: ggml-ci
+        run: |
+          vulkaninfo --summary
+          GG_BUILD_VULKAN=1 bash ./ci/run.sh ~/results/llama.cpp ~/mnt/llama.cpp
