@@ -2,6 +2,8 @@
 
 #include <cpp-httplib/httplib.h>
 
+#include <cstdlib>
+
 #ifdef _WIN32
 #include <winsock2.h>
 #include <windows.h>
@@ -97,6 +99,19 @@ static common_http_url common_http_parse_url(const std::string & url) {
     return parts;
 }
 
+// read a proxy environment variable, preferring the uppercase name over the lowercase one
+static std::string common_http_get_env(const char * key_upper, const char * key_lower) {
+    const char * val = std::getenv(key_upper);
+    if (val && val[0] != '\0') {
+        return val;
+    }
+    val = std::getenv(key_lower);
+    if (val && val[0] != '\0') {
+        return val;
+    }
+    return {};
+}
+
 static std::pair<httplib::Client, common_http_url> common_http_client(const std::string & url) {
     common_http_url parts = common_http_parse_url(url);
 
@@ -122,6 +137,24 @@ static std::pair<httplib::Client, common_http_url> common_http_client(const std:
     }
 
     cli.set_follow_location(true);
+
+    // Respect standard proxy environment variables (HTTP_PROXY/HTTPS_PROXY), required in proxied
+    // environments such as corporate DMZs. Based on ggml-org/llama.cpp#20613.
+    std::string proxy_env = (parts.scheme == "https")
+        ? common_http_get_env("HTTPS_PROXY", "https_proxy")
+        : common_http_get_env("HTTP_PROXY", "http_proxy");
+
+    if (!proxy_env.empty()) {
+        // if the proxy value has no scheme, assume http://
+        if (proxy_env.find("://") == std::string::npos) {
+            proxy_env = "http://" + proxy_env;
+        }
+        common_http_url proxy = common_http_parse_url(proxy_env);
+        cli.set_proxy(proxy.host, proxy.port);
+        if (!proxy.user.empty()) {
+            cli.set_proxy_basic_auth(proxy.user, proxy.password);
+        }
+    }
 
     return { std::move(cli), std::move(parts) };
 }
