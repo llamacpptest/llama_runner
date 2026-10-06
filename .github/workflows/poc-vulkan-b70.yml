@@ -21,10 +21,6 @@ env:
   LLAMA_ARG_LOG_COLORS: 1
   LLAMA_ARG_LOG_PREFIX: 1
   LLAMA_ARG_LOG_TIMESTAMPS: 1
-  # DMZ proxy so test-arg-parser's "good URL" GET can reach the internet (paired with the
-  # proxy-aware common/http.h change). Values from the runner's proxy config.
-  HTTP_PROXY: http://proxy-dmz.intel.com:911
-  HTTPS_PROXY: http://proxy-dmz.intel.com:912
 
 jobs:
   gpu-vulkan-intel-b70:
