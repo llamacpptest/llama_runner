@@ -21,21 +21,21 @@ jobs:
 
     steps:
       - name: Host + OS
-        shell: pwsh
+        shell: powershell
         run: |
           Write-Host "Host: $env:COMPUTERNAME"
           (Get-CimInstance Win32_OperatingSystem).Caption
           (Get-CimInstance Win32_OperatingSystem).Version
 
       - name: GPUs
-        shell: pwsh
+        shell: powershell
         run: |
           Get-CimInstance Win32_VideoController |
             Select-Object Name, DriverVersion, AdapterRAM |
             Format-Table -AutoSize
 
       - name: Toolchain availability
-        shell: pwsh
+        shell: powershell
         run: |
           $checks = @(
             "C:\msys64\usr\bin\bash.exe",   # MSYS2 (needed for upstream Windows CI)
@@ -53,7 +53,7 @@ jobs:
           }
 
       - name: vulkaninfo (if present)
-        shell: pwsh
+        shell: powershell
         run: |
           if (Get-Command vulkaninfo -ErrorAction SilentlyContinue) {
             vulkaninfo --summary
