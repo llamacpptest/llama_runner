@@ -1,0 +1,62 @@
+# PoC probe for the Windows self-hosted runner ov-dmz-37.
+# Confirms the runner works and reports GPU + toolchain, so we can decide if the
+# real upstream Windows Vulkan CI (MSYS2-based) can run here.
+# Deploy via GitHub web UI to .github/workflows/poc-windows-ov-dmz-37.yml on main
+# (do NOT push from the local clone while the proxy commit e21fdde is held).
+name: PoC Windows probe (ov-dmz-37)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/poc-windows-ov-dmz-37.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-probe:
+    runs-on: [self-hosted, X64, Windows, ov-dmz-37]
+
+    steps:
+      - name: Host + OS
+        shell: pwsh
+        run: |
+          Write-Host "Host: $env:COMPUTERNAME"
+          (Get-CimInstance Win32_OperatingSystem).Caption
+          (Get-CimInstance Win32_OperatingSystem).Version
+
+      - name: GPUs
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_VideoController |
+            Select-Object Name, DriverVersion, AdapterRAM |
+            Format-Table -AutoSize
+
+      - name: Toolchain availability
+        shell: pwsh
+        run: |
+          $checks = @(
+            "C:\msys64\usr\bin\bash.exe",   # MSYS2 (needed for upstream Windows CI)
+            "vulkaninfo",
+            "cmake",
+            "git",
+            "ninja",
+            "python"
+          )
+          foreach ($t in $checks) {
+            $cmd = Get-Command $t -ErrorAction SilentlyContinue
+            if     ($cmd)            { Write-Host ("FOUND  : {0} -> {1}" -f $t, $cmd.Source) }
+            elseif (Test-Path $t)    { Write-Host ("FOUND  : {0} (path exists)" -f $t) }
+            else                     { Write-Host ("MISSING: {0}" -f $t) }
+          }
+
+      - name: vulkaninfo (if present)
+        shell: pwsh
+        run: |
+          if (Get-Command vulkaninfo -ErrorAction SilentlyContinue) {
+            vulkaninfo --summary
+          } else {
+            Write-Host "vulkaninfo not on PATH - Vulkan SDK/runtime likely not installed yet"
+          }
