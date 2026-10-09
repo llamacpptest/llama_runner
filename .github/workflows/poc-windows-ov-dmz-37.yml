@@ -119,6 +119,31 @@ jobs:
         with:
           persist-credentials: false
 
+      # MSYS2's OpenSSL does not use the Windows cert store, so it rejects the
+      # corporate/DMZ TLS-inspection root CA. Export the Windows-trusted roots
+      # into MSYS2's trust anchors (both the MSYS and MINGW64 trust stores).
+      - name: Export Windows root CAs for MSYS2
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $seen = @{}
+          $sb = New-Object System.Text.StringBuilder
+          foreach ($store in 'Cert:\LocalMachine\Root', 'Cert:\CurrentUser\Root') {
+            foreach ($c in Get-ChildItem $store) {
+              if ($seen.ContainsKey($c.Thumbprint)) { continue }
+              $seen[$c.Thumbprint] = $true
+              [void]$sb.AppendLine('-----BEGIN CERTIFICATE-----')
+              [void]$sb.AppendLine([Convert]::ToBase64String($c.RawData, 'InsertLineBreaks'))
+              [void]$sb.AppendLine('-----END CERTIFICATE-----')
+            }
+          }
+          Write-Host "Exported $($seen.Count) root certificates"
+          foreach ($dir in 'C:\msys64\etc\pki\ca-trust\source\anchors',
+                           'C:\msys64\mingw64\etc\pki\ca-trust\source\anchors') {
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            [IO.File]::WriteAllText((Join-Path $dir 'windows-root-cas.pem'), $sb.ToString(), (New-Object Text.ASCIIEncoding))
+          }
+
       # Everything ci/run.sh (gg_check_build_requirements) + the Vulkan build needs.
       # --needed makes this a no-op once packages are installed on the runner.
       - name: Install MSYS2 build dependencies
@@ -128,6 +153,8 @@ jobs:
           CHERE_INVOKING: 1
         run: |
           export PATH="/mingw64/bin:/usr/bin:$PATH"
+          # Rebuild MSYS trust bundle (used by pacman, wget, curl) with the exported CAs
+          /usr/bin/update-ca-trust
           pacman -S --needed --noconfirm \
             git wget unzip bc \
             mingw-w64-x86_64-git-lfs \
@@ -139,6 +166,8 @@ jobs:
             mingw-w64-x86_64-python-pip \
             mingw-w64-x86_64-vulkan-devel \
             mingw-w64-x86_64-shaderc
+          # Rebuild MINGW64 trust bundle too (used by mingw64 curl/python/git-lfs)
+          if [ -x /mingw64/bin/update-ca-trust ]; then /mingw64/bin/update-ca-trust; fi
           # ci/run.sh checks `git config --get filter.lfs.clean`
           git lfs install
 
