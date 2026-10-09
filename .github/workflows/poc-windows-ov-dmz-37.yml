@@ -70,29 +70,26 @@ jobs:
             Write-Host "vulkaninfo not on PATH - Vulkan SDK/runtime likely not installed yet"
           }
 
-      # actions/checkout falls back to a REST zip + Expand-Archive when git >= 2.18
-      # is not on PATH; that extraction breaks on this repo. Make sure git exists.
-      - name: Ensure git on PATH
+      # Ensure native Windows git (Git for Windows / MinGit) is on PATH for actions/checkout.
+      # MSYS2 git has issues with Windows path cleanup during checkout. Native git handles
+      # the credentials cleanup properly. The Test step still uses MSYS2 bash.
+      - name: Ensure native Windows git on PATH
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $candidates = @(
             "C:\Program Files\Git\cmd",
             "C:\Program Files (x86)\Git\cmd",
-            "C:\msys64\usr\bin",
             "C:\tools\mingit\cmd"
           )
           $gitDir = $null
-          $existing = Get-Command git -ErrorAction SilentlyContinue
-          if ($existing) { $gitDir = Split-Path $existing.Source }
-          if (-not $gitDir) {
-            foreach ($d in $candidates) {
-              if (Test-Path (Join-Path $d 'git.exe')) { $gitDir = $d; break }
-            }
+          foreach ($d in $candidates) {
+            if (Test-Path (Join-Path $d 'git.exe')) { $gitDir = $d; break }
           }
           if (-not $gitDir) {
-            Write-Host "git not found - downloading portable MinGit"
+            Write-Host "Native Windows git not found - downloading portable MinGit"
             $dest = "C:\tools\mingit"
+            if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
             New-Item -ItemType Directory -Force -Path $dest | Out-Null
             $zip = Join-Path $env:RUNNER_TEMP 'mingit.zip'
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -101,9 +98,10 @@ jobs:
             [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $dest)
             $gitDir = Join-Path $dest 'cmd'
           }
-          Write-Host "Using git from: $gitDir"
+          Write-Host "Using native Windows git from: $gitDir"
           & (Join-Path $gitDir 'git.exe') --version
           & (Join-Path $gitDir 'git.exe') config --global core.longpaths true
+          # Prepend to PATH so native git is found before MSYS2 git
           Add-Content -Path $env:GITHUB_PATH -Value $gitDir
 
       - name: Clone
