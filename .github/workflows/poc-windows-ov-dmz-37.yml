@@ -67,7 +67,6 @@ jobs:
           } else {
             Write-Host "vulkaninfo not on PATH - Vulkan SDK/runtime likely not installed yet"
           }
-          steps:
       - name: Clone
         id: checkout
         uses: actions/checkout@v6
