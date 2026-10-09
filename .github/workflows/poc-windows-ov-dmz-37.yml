@@ -21,6 +21,7 @@ env:
   LLAMA_ARG_LOG_COLORS: 1
   LLAMA_ARG_LOG_PREFIX: 1
   LLAMA_ARG_LOG_TIMESTAMPS: 1
+  NODE_USE_SYSTEM_CA: 1
   
 jobs:
   windows-probe:
@@ -75,6 +76,7 @@ jobs:
 
       - name: Test
         id: ggml-ci
+        shell: C:\msys64\usr\bin\bash.exe -e {0}
         run: |
           vulkaninfo --summary
           GG_BUILD_VULKAN=1 bash ./ci/run.sh ./tmp/results ./tmp/mnt
