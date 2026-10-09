@@ -15,6 +15,13 @@ on:
 permissions:
   contents: read
 
+env:
+  GGML_NLOOP: 3
+  GGML_N_THREADS: 1
+  LLAMA_ARG_LOG_COLORS: 1
+  LLAMA_ARG_LOG_PREFIX: 1
+  LLAMA_ARG_LOG_TIMESTAMPS: 1
+  
 jobs:
   windows-probe:
     runs-on: [self-hosted, X64, Windows, ov-dmz-37]
@@ -60,3 +67,15 @@ jobs:
           } else {
             Write-Host "vulkaninfo not on PATH - Vulkan SDK/runtime likely not installed yet"
           }
+          steps:
+      - name: Clone
+        id: checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Test
+        id: ggml-ci
+        run: |
+          vulkaninfo --summary
+          GG_BUILD_VULKAN=1 bash ./ci/run.sh ./tmp/results ./tmp/mnt
