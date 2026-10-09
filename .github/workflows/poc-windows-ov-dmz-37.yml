@@ -100,13 +100,9 @@ jobs:
           Write-Host "Using native Windows git: $git"
           & $git --version
 
-          # Global config in the runner user's ~/.gitconfig; actions/checkout copies it
-          # into its temporary HOME, so these settings apply to the fetch.
           & $git config --global core.longpaths true
-          # Use the Windows certificate store (trusts the corporate/DMZ root CA, like Node does)
           & $git config --global http.sslBackend schannel
 
-          # Forward the proxy if the runner has one configured
           $proxy = $env:HTTPS_PROXY; if (-not $proxy) { $proxy = $env:https_proxy }
           if ($proxy) {
             Write-Host "Configuring git proxy: $proxy"
@@ -123,12 +119,40 @@ jobs:
         with:
           persist-credentials: false
 
+      # Everything ci/run.sh (gg_check_build_requirements) + the Vulkan build needs.
+      # --needed makes this a no-op once packages are installed on the runner.
+      - name: Install MSYS2 build dependencies
+        shell: C:\msys64\usr\bin\bash.exe -e {0}
+        env:
+          MSYSTEM: MINGW64
+          CHERE_INVOKING: 1
+        run: |
+          export PATH="/mingw64/bin:/usr/bin:$PATH"
+          pacman -S --needed --noconfirm \
+            git wget unzip bc \
+            mingw-w64-x86_64-git-lfs \
+            mingw-w64-x86_64-toolchain \
+            mingw-w64-x86_64-cmake \
+            mingw-w64-x86_64-ninja \
+            mingw-w64-x86_64-ccache \
+            mingw-w64-x86_64-python \
+            mingw-w64-x86_64-python-pip \
+            mingw-w64-x86_64-vulkan-devel \
+            mingw-w64-x86_64-shaderc
+          # ci/run.sh checks `git config --get filter.lfs.clean`
+          git lfs install
+
       - name: Test
         id: ggml-ci
         shell: C:\msys64\usr\bin\bash.exe -e {0}
+        env:
+          MSYSTEM: MINGW64
+          CHERE_INVOKING: 1
         run: |
-          export PATH="/usr/bin:/mingw64/bin:$PATH"
-          command -v bash
+          export PATH="/mingw64/bin:/usr/bin:$PATH"
+          for t in bash git git-lfs wget unzip python3 pip3 cmake ctest ninja gcc glslc; do
+            printf '%-8s -> %s\n' "$t" "$(command -v $t || echo MISSING)"
+          done
           vulkaninfo --summary
           LLAMA_FATAL_WARNINGS=OFF GG_BUILD_NINJA=1 GG_BUILD_VULKAN=1 GG_BUILD_LOW_PERF=1 \
             bash ./ci/run.sh ./results/llama.cpp ./mnt/llama.cpp
