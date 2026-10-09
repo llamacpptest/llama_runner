@@ -22,7 +22,8 @@ env:
   LLAMA_ARG_LOG_PREFIX: 1
   LLAMA_ARG_LOG_TIMESTAMPS: 1
   NODE_USE_SYSTEM_CA: 1
-  
+  MINGIT_URL: https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/MinGit-2.47.1-64-bit.zip
+
 jobs:
   windows-probe:
     runs-on: [self-hosted, X64, Windows, ov-dmz-37]
@@ -68,6 +69,43 @@ jobs:
           } else {
             Write-Host "vulkaninfo not on PATH - Vulkan SDK/runtime likely not installed yet"
           }
+
+      # actions/checkout falls back to a REST zip + Expand-Archive when git >= 2.18
+      # is not on PATH; that extraction breaks on this repo. Make sure git exists.
+      - name: Ensure git on PATH
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $candidates = @(
+            "C:\Program Files\Git\cmd",
+            "C:\Program Files (x86)\Git\cmd",
+            "C:\msys64\usr\bin",
+            "C:\tools\mingit\cmd"
+          )
+          $gitDir = $null
+          $existing = Get-Command git -ErrorAction SilentlyContinue
+          if ($existing) { $gitDir = Split-Path $existing.Source }
+          if (-not $gitDir) {
+            foreach ($d in $candidates) {
+              if (Test-Path (Join-Path $d 'git.exe')) { $gitDir = $d; break }
+            }
+          }
+          if (-not $gitDir) {
+            Write-Host "git not found - downloading portable MinGit"
+            $dest = "C:\tools\mingit"
+            New-Item -ItemType Directory -Force -Path $dest | Out-Null
+            $zip = Join-Path $env:RUNNER_TEMP 'mingit.zip'
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -Uri $env:MINGIT_URL -OutFile $zip -UseBasicParsing
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $dest)
+            $gitDir = Join-Path $dest 'cmd'
+          }
+          Write-Host "Using git from: $gitDir"
+          & (Join-Path $gitDir 'git.exe') --version
+          & (Join-Path $gitDir 'git.exe') config --global core.longpaths true
+          Add-Content -Path $env:GITHUB_PATH -Value $gitDir
+
       - name: Clone
         id: checkout
         uses: actions/checkout@v6
