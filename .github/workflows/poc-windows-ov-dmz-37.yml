@@ -105,8 +105,6 @@ jobs:
           & $git config --global core.longpaths true
           # Use the Windows certificate store (trusts the corporate/DMZ root CA, like Node does)
           & $git config --global http.sslBackend schannel
-          # Revocation (CRL/OCSP) endpoints are usually unreachable from a DMZ
-          & $git config --global http.schannelCheckRevoke false
 
           # Forward the proxy if the runner has one configured
           $proxy = $env:HTTPS_PROXY; if (-not $proxy) { $proxy = $env:https_proxy }
@@ -118,21 +116,6 @@ jobs:
           }
 
           Add-Content -Path $env:GITHUB_PATH -Value $gitDir
-
-      # Shows the real reason if git can't reach GitHub (checkout hides it).
-      - name: Diagnose git connectivity
-        shell: powershell
-        env:
-          GIT_TERMINAL_PROMPT: 0
-          GIT_CURL_VERBOSE: 1
-          GIT_TRACE: 1
-        run: |
-          $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:${{ github.token }}"))
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" `
-              ls-remote "https://github.com/${{ github.repository }}" HEAD 2>&1 |
-            Select-String -NotMatch -Pattern 'Authorization|AUTHORIZATION' |
-            ForEach-Object { $_.Line }
-          if ($LASTEXITCODE -ne 0) { Write-Error "git ls-remote failed (exit $LASTEXITCODE) - see output above" }
 
       - name: Clone
         id: checkout
