@@ -23,7 +23,6 @@ env:
   LLAMA_ARG_LOG_TIMESTAMPS: 1
   NODE_USE_SYSTEM_CA: 1
   MINGIT_URL: https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/MinGit-2.47.1-64-bit.zip
-  HTTPS_PROXY: http://proxy-dmz.intel.com:912
 
 jobs:
   windows-probe:
@@ -104,13 +103,8 @@ jobs:
           & $git config --global core.longpaths true
           & $git config --global http.sslBackend schannel
 
-          $proxy = $env:HTTPS_PROXY; if (-not $proxy) { $proxy = $env:https_proxy }
-          if ($proxy) {
-            Write-Host "Configuring git proxy: $proxy"
-            & $git config --global http.proxy $proxy
-          } else {
-            Write-Host "No HTTPS_PROXY in environment"
-          }
+          Write-Host "Configuring git with proxy: http://proxy-mu.intel.com:911"
+          & $git config --global http.proxy "http://proxy-mu.intel.com:911"
 
           Add-Content -Path $env:GITHUB_PATH -Value $gitDir
 
@@ -145,31 +139,33 @@ jobs:
             [IO.File]::WriteAllText((Join-Path $dir 'windows-root-cas.pem'), $sb.ToString(), (New-Object Text.ASCIIEncoding))
           }
 
-      # Install only the missing packages identified from detection run
-      - name: Install missing MSYS2 packages
+      # Try with multiple proxy configurations - Testing only the proxies provided
+      - name: Install MSYS2 packages - Attempt 1 (ftp_proxy via proxy-mu.intel.com:911)
+        id: install-attempt-1
         shell: C:\msys64\usr\bin\bash.exe -e {0}
         env:
           MSYSTEM: MINGW64
           CHERE_INVOKING: 1
-          http_proxy: http://proxy-dmz.intel.com:912
+          no_proxy: localhost,127.0.0.1
+          ftp_proxy: http://proxy-mu.intel.com:911
+          http_proxy: http://proxy-dmz.intel.com:911
           https_proxy: http://proxy-dmz.intel.com:912
+          socks_proxy: proxy-mu.intel.com:1080
+        continue-on-error: true
         run: |
           export PATH="/mingw64/bin:/usr/bin:$PATH"
-          echo "=== Rebuilding MSYS2 trust bundle with Windows CAs ==="
+          echo "=== Attempt 1: Using all provided proxies ==="
+          echo "no_proxy: $no_proxy"
+          echo "ftp_proxy: $ftp_proxy"
+          echo "http_proxy: $http_proxy"
+          echo "https_proxy: $https_proxy"
+          echo "socks_proxy: $socks_proxy"
           /usr/bin/update-ca-trust
-          
-          echo "=== Configuring pacman to use proxy ==="
-          # Set proxy in environment for curl (used by pacman)
-          export http_proxy="http://proxy-dmz.intel.com:912"
-          export https_proxy="http://proxy-dmz.intel.com:912"
-          export HTTP_PROXY="http://proxy-dmz.intel.com:912"
-          export HTTPS_PROXY="http://proxy-dmz.intel.com:912"
-          
-          # Configure curl directly (pacman uses curl internally)
-          mkdir -p ~/.config
-          echo "proxy = http://proxy-dmz.intel.com:912" > ~/.curlrc
-          
-          echo "=== Installing missing packages ==="
+          echo ""
+          echo "Testing HTTPS mirror access with proxy-dmz.intel.com:912..."
+          curl -v --proxy http://proxy-dmz.intel.com:912 https://mirror.msys2.org/mingw/x86_64/ 2>&1 | head -30
+          echo ""
+          echo "Attempting package install..."
           pacman -S --needed --noconfirm \
             mingw-w64-x86_64-git-lfs \
             mingw-w64-x86_64-cmake \
@@ -180,22 +176,122 @@ jobs:
             mingw-w64-x86_64-shaderc \
             unzip
           
-          echo "=== Rebuilding MINGW64 trust bundle ==="
-          if [ -x /mingw64/bin/update-ca-trust ]; then /mingw64/bin/update-ca-trust; fi
-          
-          echo "=== Initializing git-lfs ==="
-          git lfs install
-          
-          echo "=== Installation complete ==="
+          if [ $? -eq 0 ]; then
+            echo "✓ SUCCESS with provided proxies (Attempt 1)"
+            git lfs install
+            exit 0
+          else
+            echo "✗ FAILED with provided proxies (Attempt 1)"
+            exit 1
+          fi
 
-      - name: Verify all tools are available
+      - name: Install MSYS2 packages - Attempt 2 (http_proxy via proxy-dmz.intel.com:911)
+        id: install-attempt-2
+        if: steps.install-attempt-1.outcome == 'failure'
         shell: C:\msys64\usr\bin\bash.exe -e {0}
         env:
           MSYSTEM: MINGW64
           CHERE_INVOKING: 1
+          no_proxy: localhost,127.0.0.1
+          ftp_proxy: http://proxy-mu.intel.com:911
+          http_proxy: http://proxy-dmz.intel.com:911
+          https_proxy: http://proxy-dmz.intel.com:911
+          socks_proxy: proxy-mu.intel.com:1080
+        continue-on-error: true
         run: |
           export PATH="/mingw64/bin:/usr/bin:$PATH"
-          echo "=== Final tool verification ==="
+          echo "=== Attempt 2: Using https_proxy on port 911 ==="
+          echo "no_proxy: $no_proxy"
+          echo "ftp_proxy: $ftp_proxy"
+          echo "http_proxy: $http_proxy"
+          echo "https_proxy: $https_proxy"
+          echo "socks_proxy: $socks_proxy"
+          /usr/bin/update-ca-trust
+          echo ""
+          echo "Testing HTTPS mirror access with proxy-dmz.intel.com:911..."
+          curl -v --proxy http://proxy-dmz.intel.com:911 https://mirror.msys2.org/mingw/x86_64/ 2>&1 | head -30
+          echo ""
+          echo "Attempting package install..."
+          pacman -S --needed --noconfirm \
+            mingw-w64-x86_64-git-lfs \
+            mingw-w64-x86_64-cmake \
+            mingw-w64-x86_64-ninja \
+            mingw-w64-x86_64-gcc \
+            mingw-w64-x86_64-ccache \
+            mingw-w64-x86_64-vulkan-devel \
+            mingw-w64-x86_64-shaderc \
+            unzip
+          
+          if [ $? -eq 0 ]; then
+            echo "✓ SUCCESS with port 911 (Attempt 2)"
+            git lfs install
+            exit 0
+          else
+            echo "✗ FAILED with port 911 (Attempt 2)"
+            exit 1
+          fi
+
+      - name: Install MSYS2 packages - Attempt 3 (http_proxy via proxy-mu.intel.com:911)
+        id: install-attempt-3
+        if: steps.install-attempt-2.outcome == 'failure'
+        shell: C:\msys64\usr\bin\bash.exe -e {0}
+        env:
+          MSYSTEM: MINGW64
+          CHERE_INVOKING: 1
+          no_proxy: localhost,127.0.0.1
+          ftp_proxy: http://proxy-mu.intel.com:911
+          http_proxy: http://proxy-mu.intel.com:911
+          https_proxy: http://proxy-mu.intel.com:911
+          socks_proxy: proxy-mu.intel.com:1080
+        continue-on-error: true
+        run: |
+          export PATH="/mingw64/bin:/usr/bin:$PATH"
+          echo "=== Attempt 3: Using proxy-mu.intel.com:911 for all protocols ==="
+          echo "no_proxy: $no_proxy"
+          echo "ftp_proxy: $ftp_proxy"
+          echo "http_proxy: $http_proxy"
+          echo "https_proxy: $https_proxy"
+          echo "socks_proxy: $socks_proxy"
+          /usr/bin/update-ca-trust
+          echo ""
+          echo "Testing HTTPS mirror access with proxy-mu.intel.com:911..."
+          curl -v --proxy http://proxy-mu.intel.com:911 https://mirror.msys2.org/mingw/x86_64/ 2>&1 | head -30
+          echo ""
+          echo "Attempting package install..."
+          pacman -S --needed --noconfirm \
+            mingw-w64-x86_64-git-lfs \
+            mingw-w64-x86_64-cmake \
+            mingw-w64-x86_64-ninja \
+            mingw-w64-x86_64-gcc \
+            mingw-w64-x86_64-ccache \
+            mingw-w64-x86_64-vulkan-devel \
+            mingw-w64-x86_64-shaderc \
+            unzip
+          
+          if [ $? -eq 0 ]; then
+            echo "✓ SUCCESS with proxy-mu.intel.com:911 (Attempt 3)"
+            git lfs install
+            exit 0
+          else
+            echo "✗ FAILED with proxy-mu.intel.com:911 (Attempt 3)"
+            exit 1
+          fi
+
+      - name: Verify installation and run test
+        id: verify-and-test
+        if: |
+          steps.install-attempt-1.outcome == 'success' ||
+          steps.install-attempt-2.outcome == 'success' ||
+          steps.install-attempt-3.outcome == 'success'
+        shell: C:\msys64\usr\bin\bash.exe -e {0}
+        env:
+          MSYSTEM: MINGW64
+          CHERE_INVOKING: 1
+          http_proxy: http://proxy-dmz.intel.com:911
+          https_proxy: http://proxy-dmz.intel.com:912
+        run: |
+          export PATH="/mingw64/bin:/usr/bin:$PATH"
+          echo "=== Verifying all tools are available ==="
           for t in bash git git-lfs wget unzip python3 pip3 cmake ctest ninja gcc glslc ccache vulkaninfo; do
             if command -v "$t" &> /dev/null; then
               printf '✓ %-10s -> %s\n' "$t" "$(command -v $t)"
@@ -203,17 +299,24 @@ jobs:
               printf '✗ %-10s -> MISSING\n' "$t"
             fi
           done
-
-      - name: Test
-        id: ggml-ci
-        shell: C:\msys64\usr\bin\bash.exe -e {0}
-        env:
-          MSYSTEM: MINGW64
-          CHERE_INVOKING: 1
-          http_proxy: http://proxy-dmz.intel.com:912
-          https_proxy: http://proxy-dmz.intel.com:912
-        run: |
-          export PATH="/mingw64/bin:/usr/bin:$PATH"
+          echo ""
           echo "=== Running CI tests ==="
           LLAMA_FATAL_WARNINGS=OFF GG_BUILD_NINJA=1 GG_BUILD_VULKAN=1 GG_BUILD_LOW_PERF=1 \
             bash ./ci/run.sh ./results/llama.cpp ./mnt/llama.cpp
+
+      - name: Report results
+        if: always()
+        shell: bash
+        run: |
+          echo "=== INSTALLATION RESULTS ==="
+          echo "Attempt 1 (All provided proxies - mixed): ${{ steps.install-attempt-1.outcome }}"
+          echo "Attempt 2 (proxy-dmz.intel.com:911):     ${{ steps.install-attempt-2.outcome }}"
+          echo "Attempt 3 (proxy-mu.intel.com:911):      ${{ steps.install-attempt-3.outcome }}"
+          echo ""
+          if [ "${{ steps.verify-and-test.outcome }}" = "success" ]; then
+            echo "✓ CI TEST PASSED - Packages installed and CI completed successfully!"
+          elif [ "${{ steps.install-attempt-1.outcome }}" = "success" ] || [ "${{ steps.install-attempt-2.outcome }}" = "success" ] || [ "${{ steps.install-attempt-3.outcome }}" = "success" ]; then
+            echo "✓ PACKAGES INSTALLED - But CI tests may have failed (check logs above)"
+          else
+            echo "✗ ALL ATTEMPTS FAILED - Package installation unsuccessful with any proxy configuration"
+          fi
