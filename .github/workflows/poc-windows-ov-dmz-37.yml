@@ -158,6 +158,17 @@ jobs:
           echo "=== Rebuilding MSYS2 trust bundle with Windows CAs ==="
           /usr/bin/update-ca-trust
           
+          echo "=== Configuring pacman to use proxy ==="
+          # Set proxy in environment for curl (used by pacman)
+          export http_proxy="http://proxy-dmz.intel.com:912"
+          export https_proxy="http://proxy-dmz.intel.com:912"
+          export HTTP_PROXY="http://proxy-dmz.intel.com:912"
+          export HTTPS_PROXY="http://proxy-dmz.intel.com:912"
+          
+          # Configure curl directly (pacman uses curl internally)
+          mkdir -p ~/.config
+          echo "proxy = http://proxy-dmz.intel.com:912" > ~/.curlrc
+          
           echo "=== Installing missing packages ==="
           pacman -S --needed --noconfirm \
             mingw-w64-x86_64-git-lfs \
