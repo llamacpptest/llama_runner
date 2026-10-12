@@ -58,24 +58,18 @@ jobs:
             Select-Object Name, Used, Free |
             Format-Table -AutoSize
 
-      - name: Check for Common Tools (No Installation)
+      - name: Check for Common Tools
         shell: powershell
         run: |
           Write-Host "=== Checking Available Tools ==="
-          $tools = @(
-            "git",
-            "python",
-            "cmake",
-            "ninja",
-            "vulkaninfo"
-          )
+          $tools = @("git", "python", "cmake", "ninja", "vulkaninfo")
           
           foreach ($tool in $tools) {
             $cmd = Get-Command $tool -ErrorAction SilentlyContinue
             if ($cmd) {
-              Write-Host "✓ FOUND   : $tool -> $($cmd.Source)"
+              Write-Host "[FOUND]   : $tool -> $($cmd.Source)"
             } else {
-              Write-Host "✗ MISSING: $tool"
+              Write-Host "[MISSING] : $tool"
             }
           }
 
@@ -84,9 +78,9 @@ jobs:
         run: |
           Write-Host "=== MSYS2 Availability ==="
           if (Test-Path "C:\msys64\usr\bin\bash.exe") {
-            Write-Host "✓ FOUND   : MSYS2 bash.exe at C:\msys64\usr\bin\bash.exe"
+            Write-Host "[FOUND]   : MSYS2 bash.exe at C:\msys64\usr\bin\bash.exe"
           } else {
-            Write-Host "✗ MISSING: MSYS2 bash.exe"
+            Write-Host "[MISSING] : MSYS2 bash.exe"
           }
 
       - name: Test Basic Bash Command
