@@ -18,6 +18,18 @@ jobs:
     runs-on: [self-hosted, X64, Windows, ov-dmz-36]
 
     steps:
+      - name: Disable SSL verification for GitHub REST API download
+        shell: powershell
+        run: |
+          [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+
+      - name: Clone Repository
+        id: checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
       - name: Host + OS Information
         shell: powershell
         run: |
@@ -94,12 +106,6 @@ jobs:
           echo ""
           echo "=== PATH ==="
           echo $PATH
-
-      - name: Clone Repository
-        id: checkout
-        uses: actions/checkout@v6
-        with:
-          persist-credentials: false
 
       - name: Repository Information
         shell: bash
