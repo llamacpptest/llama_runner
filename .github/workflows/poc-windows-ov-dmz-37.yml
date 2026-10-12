@@ -23,6 +23,7 @@ env:
   LLAMA_ARG_LOG_TIMESTAMPS: 1
   NODE_USE_SYSTEM_CA: 1
   MINGIT_URL: https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/MinGit-2.47.1-64-bit.zip
+  HTTPS_PROXY: http://proxy-dmz.intel.com:912
 
 jobs:
   windows-probe:
@@ -151,6 +152,8 @@ jobs:
         env:
           MSYSTEM: MINGW64
           CHERE_INVOKING: 1
+          http_proxy: http://proxy-dmz.intel.com:912
+          https_proxy: http://proxy-dmz.intel.com:912
         run: |
           export PATH="/mingw64/bin:/usr/bin:$PATH"
           # Rebuild MSYS trust bundle (used by pacman, wget, curl) with the exported CAs
@@ -177,6 +180,8 @@ jobs:
         env:
           MSYSTEM: MINGW64
           CHERE_INVOKING: 1
+          http_proxy: http://proxy-dmz.intel.com:912
+          https_proxy: http://proxy-dmz.intel.com:912
         run: |
           export PATH="/mingw64/bin:/usr/bin:$PATH"
           for t in bash git git-lfs wget unzip python3 pip3 cmake ctest ninja gcc glslc; do
