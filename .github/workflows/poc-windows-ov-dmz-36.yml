@@ -107,6 +107,42 @@ jobs:
           echo "=== PATH ==="
           echo $PATH
 
+      - name: Export Windows root CAs for MSYS2
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $seen = @{}
+          $sb = New-Object System.Text.StringBuilder
+          foreach ($store in 'Cert:\LocalMachine\Root', 'Cert:\CurrentUser\Root') {
+            foreach ($c in Get-ChildItem $store) {
+              if ($seen.ContainsKey($c.Thumbprint)) { continue }
+              $seen[$c.Thumbprint] = $true
+              [void]$sb.AppendLine('-----BEGIN CERTIFICATE-----')
+              [void]$sb.AppendLine([Convert]::ToBase64String($c.RawData, 'InsertLineBreaks'))
+              [void]$sb.AppendLine('-----END CERTIFICATE-----')
+            }
+          }
+          foreach ($dir in 'C:\msys64\etc\pki\ca-trust\source\anchors',
+                           'C:\msys64\mingw64\etc\pki\ca-trust\source\anchors') {
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            [IO.File]::WriteAllText((Join-Path $dir 'windows-root-cas.pem'), $sb.ToString(), (New-Object Text.ASCIIEncoding))
+          }
+
+      - name: Run actual test
+        shell: C:\msys64\usr\bin\bash.exe -e {0}
+        run: |
+          export PATH="/mingw64/bin:/usr/bin:$PATH"
+          export no_proxy=localhost,127.0.0.1
+          export ftp_proxy=http://proxy-mu.intel.com:911
+          export https_proxy=http://proxy-dmz.intel.com:912
+          export socks_proxy=proxy-mu.intel.com:1080
+          export http_proxy=http://proxy-dmz.intel.com:911
+          export CFLAGS="-D_WIN32_WINNT=0x0A00"
+          export CXXFLAGS="-D_WIN32_WINNT=0x0A00"
+          /usr/bin/update-ca-trust
+          LLAMA_FATAL_WARNINGS=OFF GG_BUILD_NINJA=1 GG_BUILD_VULKAN=1 GG_BUILD_LOW_PERF=1 \
+            bash ./ci/run.sh ./results/llama.cpp ./mnt/llama.cpp
+
       - name: Repository Information
         shell: bash
         run: |
@@ -125,11 +161,3 @@ jobs:
           Write-Host "Runner: ov-dmz-36"
           Write-Host "Status: All basic checks completed"
           Write-Host "Next: Review logs to determine what needs to be installed"
-      - name: Run actual test
-        shell: C:\msys64\usr\bin\bash.exe -e {0}
-        run: |
-          export PATH="/mingw64/bin:/usr/bin:$PATH"
-          export CFLAGS="-D_WIN32_WINNT=0x0A00"
-          export CXXFLAGS="-D_WIN32_WINNT=0x0A00"
-          LLAMA_FATAL_WARNINGS=OFF GG_BUILD_NINJA=1 GG_BUILD_VULKAN=1 GG_BUILD_LOW_PERF=1 \
-            bash ./ci/run.sh ./results/llama.cpp ./mnt/llama.cpp
