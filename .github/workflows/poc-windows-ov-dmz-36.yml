@@ -129,5 +129,7 @@ jobs:
         shell: C:\msys64\usr\bin\bash.exe -e {0}
         run: |
           export PATH="/mingw64/bin:/usr/bin:$PATH"
+          export CFLAGS="-D_WIN32_WINNT=0x0A00"
+          export CXXFLAGS="-D_WIN32_WINNT=0x0A00"
           LLAMA_FATAL_WARNINGS=OFF GG_BUILD_NINJA=1 GG_BUILD_VULKAN=1 GG_BUILD_LOW_PERF=1 \
             bash ./ci/run.sh ./results/llama.cpp ./mnt/llama.cpp
