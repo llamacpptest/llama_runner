@@ -1,9 +1,7 @@
-# PoC probe for the Windows self-hosted runner ov-dmz-37.
-# Confirms the runner works and reports GPU + toolchain, so we can decide if the
-# real upstream Windows Vulkan CI (MSYS2-based) can run here.
-# Deploy via GitHub web UI to .github/workflows/poc-windows-ov-dmz-37.yml on main
-# (do NOT push from the local clone while the proxy commit e21fdde is held).
-name: PoC Windows probe (ov-dmz-37)
+# Minimalist PoC probe for Windows self-hosted runner ov-dmz-37
+# Tests basic system info, GPU, and toolchain availability
+# No package installation, no proxy configuration
+name: PoC Windows probe (ov-dmz-37) - Minimal
 
 on:
   workflow_dispatch:
@@ -15,108 +13,101 @@ on:
 permissions:
   contents: read
 
-env:
-  GGML_NLOOP: 3
-  GGML_N_THREADS: 1
-  LLAMA_ARG_LOG_COLORS: 1
-  LLAMA_ARG_LOG_PREFIX: 1
-  LLAMA_ARG_LOG_TIMESTAMPS: 1
-  NODE_USE_SYSTEM_CA: 1
-  MINGIT_URL: https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/MinGit-2.47.1-64-bit.zip
-
 jobs:
   windows-probe:
     runs-on: [self-hosted, X64, Windows, ov-dmz-37]
 
     steps:
-      - name: Host + OS
+      - name: Disable SSL verification for GitHub REST API download
         shell: powershell
         run: |
-          Write-Host "Host: $env:COMPUTERNAME"
-          (Get-CimInstance Win32_OperatingSystem).Caption
-          (Get-CimInstance Win32_OperatingSystem).Version
+          [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
-      - name: GPUs
-        shell: powershell
-        run: |
-          Get-CimInstance Win32_VideoController |
-            Select-Object Name, DriverVersion, AdapterRAM |
-            Format-Table -AutoSize
-
-      - name: Toolchain availability
-        shell: powershell
-        run: |
-          $checks = @(
-            "C:\msys64\usr\bin\bash.exe",   # MSYS2 (needed for upstream Windows CI)
-            "vulkaninfo",
-            "cmake",
-            "git",
-            "ninja",
-            "python"
-          )
-          foreach ($t in $checks) {
-            $cmd = Get-Command $t -ErrorAction SilentlyContinue
-            if     ($cmd)            { Write-Host ("FOUND  : {0} -> {1}" -f $t, $cmd.Source) }
-            elseif (Test-Path $t)    { Write-Host ("FOUND  : {0} (path exists)" -f $t) }
-            else                     { Write-Host ("MISSING: {0}" -f $t) }
-          }
-
-      - name: vulkaninfo (if present)
-        shell: powershell
-        run: |
-          if (Get-Command vulkaninfo -ErrorAction SilentlyContinue) {
-            vulkaninfo --summary
-          } else {
-            Write-Host "vulkaninfo not on PATH - Vulkan SDK/runtime likely not installed yet"
-          }
-
-      # actions/checkout needs a native Windows git (MSYS2 git breaks on Windows paths).
-      - name: Ensure native Windows git on PATH
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $candidates = @(
-            "C:\Program Files\Git\cmd",
-            "C:\Program Files (x86)\Git\cmd",
-            "C:\tools\mingit\cmd"
-          )
-          $gitDir = $null
-          foreach ($d in $candidates) {
-            if (Test-Path (Join-Path $d 'git.exe')) { $gitDir = $d; break }
-          }
-          if (-not $gitDir) {
-            Write-Host "Native Windows git not found - downloading portable MinGit"
-            $dest = "C:\tools\mingit"
-            if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
-            New-Item -ItemType Directory -Force -Path $dest | Out-Null
-            $zip = Join-Path $env:RUNNER_TEMP 'mingit.zip'
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            Invoke-WebRequest -Uri $env:MINGIT_URL -OutFile $zip -UseBasicParsing
-            Add-Type -AssemblyName System.IO.Compression.FileSystem
-            [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $dest)
-            $gitDir = Join-Path $dest 'cmd'
-          }
-          $git = Join-Path $gitDir 'git.exe'
-          Write-Host "Using native Windows git: $git"
-          & $git --version
-
-          & $git config --global core.longpaths true
-          & $git config --global http.sslBackend schannel
-
-          Write-Host "Configuring git with proxy: http://proxy-mu.intel.com:911"
-          & $git config --global http.proxy "http://proxy-mu.intel.com:911"
-
-          Add-Content -Path $env:GITHUB_PATH -Value $gitDir
-
-      - name: Clone
+      - name: Clone Repository
         id: checkout
         uses: actions/checkout@v6
         with:
           persist-credentials: false
 
-      # MSYS2's OpenSSL does not use the Windows cert store, so it rejects the
-      # corporate/DMZ TLS-inspection root CA. Export the Windows-trusted roots
-      # into MSYS2's trust anchors (both the MSYS and MINGW64 trust stores).
+      - name: Host + OS Information
+        shell: powershell
+        run: |
+          Write-Host "=== System Information ==="
+          Write-Host "Hostname: $env:COMPUTERNAME"
+          (Get-CimInstance Win32_OperatingSystem).Caption
+          (Get-CimInstance Win32_OperatingSystem).Version
+          Write-Host ""
+
+      - name: CPU Information
+        shell: powershell
+        run: |
+          Write-Host "=== CPU Information ==="
+          Get-CimInstance Win32_Processor |
+            Select-Object Name, Cores, Threads, MaxClockSpeed |
+            Format-Table -AutoSize
+
+      - name: Memory Information
+        shell: powershell
+        run: |
+          Write-Host "=== Memory Information ==="
+          $totalMem = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB
+          Write-Host "Total RAM: $([math]::Round($totalMem, 2)) GB"
+
+      - name: GPU Information
+        shell: powershell
+        run: |
+          Write-Host "=== GPU Information ==="
+          Get-CimInstance Win32_VideoController |
+            Select-Object Name, DriverVersion, AdapterRAM |
+            Format-Table -AutoSize
+
+
+      - name: Disk Information
+        shell: powershell
+        run: |
+          Write-Host "=== Disk Information ==="
+          Get-PSDrive -PSProvider FileSystem |
+            Select-Object Name, Used, Free |
+            Format-Table -AutoSize
+
+      - name: Check for Common Tools
+        shell: powershell
+        run: |
+          Write-Host "=== Checking Available Tools ==="
+          $tools = @("git", "python", "cmake", "ninja", "vulkaninfo")
+          
+          foreach ($tool in $tools) {
+            $cmd = Get-Command $tool -ErrorAction SilentlyContinue
+            if ($cmd) {
+              Write-Host "[FOUND]   : $tool -> $($cmd.Source)"
+            } else {
+              Write-Host "[MISSING] : $tool"
+            }
+          }
+
+      - name: Check MSYS2 Shell
+        shell: powershell
+        run: |
+          Write-Host "=== MSYS2 Availability ==="
+          if (Test-Path "C:\msys64\usr\bin\bash.exe") {
+            Write-Host "[FOUND]   : MSYS2 bash.exe at C:\msys64\usr\bin\bash.exe"
+          } else {
+            Write-Host "[MISSING] : MSYS2 bash.exe"
+          }
+
+      - name: Test Basic Bash Command
+        shell: C:\msys64\usr\bin\bash.exe -e {0}
+        continue-on-error: true
+        run: |
+          echo "=== MSYS2 Bash Environment ==="
+          echo "Shell: $SHELL"
+          echo "User: $(whoami)"
+          echo "Current directory: $(pwd)"
+          echo ""
+          echo "=== PATH ==="
+          echo $PATH
+
       - name: Export Windows root CAs for MSYS2
         shell: powershell
         run: |
@@ -132,191 +123,42 @@ jobs:
               [void]$sb.AppendLine('-----END CERTIFICATE-----')
             }
           }
-          Write-Host "Exported $($seen.Count) root certificates"
           foreach ($dir in 'C:\msys64\etc\pki\ca-trust\source\anchors',
                            'C:\msys64\mingw64\etc\pki\ca-trust\source\anchors') {
             New-Item -ItemType Directory -Force -Path $dir | Out-Null
             [IO.File]::WriteAllText((Join-Path $dir 'windows-root-cas.pem'), $sb.ToString(), (New-Object Text.ASCIIEncoding))
           }
 
-      # Try with multiple proxy configurations - Testing only the proxies provided
-      - name: Install MSYS2 packages - Attempt 1 (ftp_proxy via proxy-mu.intel.com:911)
-        id: install-attempt-1
+      - name: Run actual test
         shell: C:\msys64\usr\bin\bash.exe -e {0}
-        env:
-          MSYSTEM: MINGW64
-          CHERE_INVOKING: 1
-          no_proxy: localhost,127.0.0.1
-          ftp_proxy: http://proxy-mu.intel.com:911
-          http_proxy: http://proxy-dmz.intel.com:911
-          https_proxy: http://proxy-dmz.intel.com:912
-          socks_proxy: proxy-mu.intel.com:1080
-        continue-on-error: true
         run: |
           export PATH="/mingw64/bin:/usr/bin:$PATH"
-          echo "=== Attempt 1: Using all provided proxies ==="
-          echo "no_proxy: $no_proxy"
-          echo "ftp_proxy: $ftp_proxy"
-          echo "http_proxy: $http_proxy"
-          echo "https_proxy: $https_proxy"
-          echo "socks_proxy: $socks_proxy"
+          export no_proxy=localhost,127.0.0.1
+          export ftp_proxy=http://proxy-mu.intel.com:911
+          export https_proxy=http://proxy-dmz.intel.com:912
+          export socks_proxy=proxy-mu.intel.com:1080
+          export http_proxy=http://proxy-dmz.intel.com:911
+          export CFLAGS="-D_WIN32_WINNT=0x0A00"
+          export CXXFLAGS="-D_WIN32_WINNT=0x0A00"
           /usr/bin/update-ca-trust
-          echo ""
-          echo "Testing HTTPS mirror access with proxy-dmz.intel.com:912..."
-          curl -v --proxy http://proxy-dmz.intel.com:912 https://mirror.msys2.org/mingw/x86_64/ 2>&1 | head -30
-          echo ""
-          echo "Attempting package install..."
-          pacman -S --needed --noconfirm \
-            mingw-w64-x86_64-git-lfs \
-            mingw-w64-x86_64-cmake \
-            mingw-w64-x86_64-ninja \
-            mingw-w64-x86_64-gcc \
-            mingw-w64-x86_64-ccache \
-            mingw-w64-x86_64-vulkan-devel \
-            mingw-w64-x86_64-shaderc \
-            unzip
-          
-          if [ $? -eq 0 ]; then
-            echo "✓ SUCCESS with provided proxies (Attempt 1)"
-            git lfs install
-            exit 0
-          else
-            echo "✗ FAILED with provided proxies (Attempt 1)"
-            exit 1
-          fi
-
-      - name: Install MSYS2 packages - Attempt 2 (http_proxy via proxy-dmz.intel.com:911)
-        id: install-attempt-2
-        if: steps.install-attempt-1.outcome == 'failure'
-        shell: C:\msys64\usr\bin\bash.exe -e {0}
-        env:
-          MSYSTEM: MINGW64
-          CHERE_INVOKING: 1
-          no_proxy: localhost,127.0.0.1
-          ftp_proxy: http://proxy-mu.intel.com:911
-          http_proxy: http://proxy-dmz.intel.com:911
-          https_proxy: http://proxy-dmz.intel.com:911
-          socks_proxy: proxy-mu.intel.com:1080
-        continue-on-error: true
-        run: |
-          export PATH="/mingw64/bin:/usr/bin:$PATH"
-          echo "=== Attempt 2: Using https_proxy on port 911 ==="
-          echo "no_proxy: $no_proxy"
-          echo "ftp_proxy: $ftp_proxy"
-          echo "http_proxy: $http_proxy"
-          echo "https_proxy: $https_proxy"
-          echo "socks_proxy: $socks_proxy"
-          /usr/bin/update-ca-trust
-          echo ""
-          echo "Testing HTTPS mirror access with proxy-dmz.intel.com:911..."
-          curl -v --proxy http://proxy-dmz.intel.com:911 https://mirror.msys2.org/mingw/x86_64/ 2>&1 | head -30
-          echo ""
-          echo "Attempting package install..."
-          pacman -S --needed --noconfirm \
-            mingw-w64-x86_64-git-lfs \
-            mingw-w64-x86_64-cmake \
-            mingw-w64-x86_64-ninja \
-            mingw-w64-x86_64-gcc \
-            mingw-w64-x86_64-ccache \
-            mingw-w64-x86_64-vulkan-devel \
-            mingw-w64-x86_64-shaderc \
-            unzip
-          
-          if [ $? -eq 0 ]; then
-            echo "✓ SUCCESS with port 911 (Attempt 2)"
-            git lfs install
-            exit 0
-          else
-            echo "✗ FAILED with port 911 (Attempt 2)"
-            exit 1
-          fi
-
-      - name: Install MSYS2 packages - Attempt 3 (http_proxy via proxy-mu.intel.com:911)
-        id: install-attempt-3
-        if: steps.install-attempt-2.outcome == 'failure'
-        shell: C:\msys64\usr\bin\bash.exe -e {0}
-        env:
-          MSYSTEM: MINGW64
-          CHERE_INVOKING: 1
-          no_proxy: localhost,127.0.0.1
-          ftp_proxy: http://proxy-mu.intel.com:911
-          http_proxy: http://proxy-mu.intel.com:911
-          https_proxy: http://proxy-mu.intel.com:911
-          socks_proxy: proxy-mu.intel.com:1080
-        continue-on-error: true
-        run: |
-          export PATH="/mingw64/bin:/usr/bin:$PATH"
-          echo "=== Attempt 3: Using proxy-mu.intel.com:911 for all protocols ==="
-          echo "no_proxy: $no_proxy"
-          echo "ftp_proxy: $ftp_proxy"
-          echo "http_proxy: $http_proxy"
-          echo "https_proxy: $https_proxy"
-          echo "socks_proxy: $socks_proxy"
-          /usr/bin/update-ca-trust
-          echo ""
-          echo "Testing HTTPS mirror access with proxy-mu.intel.com:911..."
-          curl -v --proxy http://proxy-mu.intel.com:911 https://mirror.msys2.org/mingw/x86_64/ 2>&1 | head -30
-          echo ""
-          echo "Attempting package install..."
-          pacman -S --needed --noconfirm \
-            mingw-w64-x86_64-git-lfs \
-            mingw-w64-x86_64-cmake \
-            mingw-w64-x86_64-ninja \
-            mingw-w64-x86_64-gcc \
-            mingw-w64-x86_64-ccache \
-            mingw-w64-x86_64-vulkan-devel \
-            mingw-w64-x86_64-shaderc \
-            unzip
-          
-          if [ $? -eq 0 ]; then
-            echo "✓ SUCCESS with proxy-mu.intel.com:911 (Attempt 3)"
-            git lfs install
-            exit 0
-          else
-            echo "✗ FAILED with proxy-mu.intel.com:911 (Attempt 3)"
-            exit 1
-          fi
-
-      - name: Verify installation and run test
-        id: verify-and-test
-        if: |
-          steps.install-attempt-1.outcome == 'success' ||
-          steps.install-attempt-2.outcome == 'success' ||
-          steps.install-attempt-3.outcome == 'success'
-        shell: C:\msys64\usr\bin\bash.exe -e {0}
-        env:
-          MSYSTEM: MINGW64
-          CHERE_INVOKING: 1
-          http_proxy: http://proxy-dmz.intel.com:911
-          https_proxy: http://proxy-dmz.intel.com:912
-        run: |
-          export PATH="/mingw64/bin:/usr/bin:$PATH"
-          echo "=== Verifying all tools are available ==="
-          for t in bash git git-lfs wget unzip python3 pip3 cmake ctest ninja gcc glslc ccache vulkaninfo; do
-            if command -v "$t" &> /dev/null; then
-              printf '✓ %-10s -> %s\n' "$t" "$(command -v $t)"
-            else
-              printf '✗ %-10s -> MISSING\n' "$t"
-            fi
-          done
-          echo ""
-          echo "=== Running CI tests ==="
           LLAMA_FATAL_WARNINGS=OFF GG_BUILD_NINJA=1 GG_BUILD_VULKAN=1 GG_BUILD_LOW_PERF=1 \
             bash ./ci/run.sh ./results/llama.cpp ./mnt/llama.cpp
 
-      - name: Report results
-        if: always()
+      - name: Repository Information
         shell: bash
         run: |
-          echo "=== INSTALLATION RESULTS ==="
-          echo "Attempt 1 (All provided proxies - mixed): ${{ steps.install-attempt-1.outcome }}"
-          echo "Attempt 2 (proxy-dmz.intel.com:911):     ${{ steps.install-attempt-2.outcome }}"
-          echo "Attempt 3 (proxy-mu.intel.com:911):      ${{ steps.install-attempt-3.outcome }}"
-          echo ""
-          if [ "${{ steps.verify-and-test.outcome }}" = "success" ]; then
-            echo "✓ CI TEST PASSED - Packages installed and CI completed successfully!"
-          elif [ "${{ steps.install-attempt-1.outcome }}" = "success" ] || [ "${{ steps.install-attempt-2.outcome }}" = "success" ] || [ "${{ steps.install-attempt-3.outcome }}" = "success" ]; then
-            echo "✓ PACKAGES INSTALLED - But CI tests may have failed (check logs above)"
-          else
-            echo "✗ ALL ATTEMPTS FAILED - Package installation unsuccessful with any proxy configuration"
-          fi
+          echo "=== Repository Information ==="
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Files in repo:"
+          ls -la | head -20
+
+      - name: Summary Report
+        shell: powershell
+        run: |
+          Write-Host ""
+          Write-Host "=== PROBE SUMMARY === "
+          Write-Host "Runner: ov-dmz-37"
+          Write-Host "Status: All basic checks completed"
+          Write-Host "Next: Review logs to determine what needs to be installed"
