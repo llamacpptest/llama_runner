@@ -125,3 +125,9 @@ jobs:
           Write-Host "Runner: ov-dmz-36"
           Write-Host "Status: All basic checks completed"
           Write-Host "Next: Review logs to determine what needs to be installed"
+      - name: Run actual test
+        shell: C:\msys64\usr\bin\bash.exe -e {0}
+        run: |
+          export PATH="/mingw64/bin:/usr/bin:$PATH"
+          LLAMA_FATAL_WARNINGS=OFF GG_BUILD_NINJA=1 GG_BUILD_VULKAN=1 GG_BUILD_LOW_PERF=1 \
+            bash ./ci/run.sh ./results/llama.cpp ./mnt/llama.cpp
