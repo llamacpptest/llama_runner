@@ -24,12 +24,6 @@ jobs:
           [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
           [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
-      - name: Clone Repository
-        id: checkout
-        uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
       - name: Host + OS Information
         shell: powershell
         run: |
@@ -107,7 +101,13 @@ jobs:
           echo ""
           echo "=== PATH ==="
           echo $PATH
-
+          
+      - name: Clone Repository
+        id: checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          
       - name: Export Windows root CAs for MSYS2
         shell: powershell
         run: |
