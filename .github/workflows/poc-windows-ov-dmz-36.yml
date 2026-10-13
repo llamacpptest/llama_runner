@@ -108,27 +108,6 @@ jobs:
           echo "=== PATH ==="
           echo $PATH
 
-      - name: Export Windows root CAs for MSYS2
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $seen = @{}
-          $sb = New-Object System.Text.StringBuilder
-          foreach ($store in 'Cert:\LocalMachine\Root', 'Cert:\CurrentUser\Root') {
-            foreach ($c in Get-ChildItem $store) {
-              if ($seen.ContainsKey($c.Thumbprint)) { continue }
-              $seen[$c.Thumbprint] = $true
-              [void]$sb.AppendLine('-----BEGIN CERTIFICATE-----')
-              [void]$sb.AppendLine([Convert]::ToBase64String($c.RawData, 'InsertLineBreaks'))
-              [void]$sb.AppendLine('-----END CERTIFICATE-----')
-            }
-          }
-          foreach ($dir in 'C:\msys64\etc\pki\ca-trust\source\anchors',
-                           'C:\msys64\mingw64\etc\pki\ca-trust\source\anchors') {
-            New-Item -ItemType Directory -Force -Path $dir | Out-Null
-            [IO.File]::WriteAllText((Join-Path $dir 'windows-root-cas.pem'), $sb.ToString(), (New-Object Text.ASCIIEncoding))
-          }
-
       - name: Run actual test
         shell: C:\msys64\usr\bin\bash.exe -e {0}
         run: |
