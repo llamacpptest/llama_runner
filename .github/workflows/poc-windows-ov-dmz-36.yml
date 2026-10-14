@@ -112,11 +112,6 @@ jobs:
         shell: C:\msys64\usr\bin\bash.exe -e {0}
         run: |
           export PATH="/mingw64/bin:/usr/bin:$PATH"
-          export no_proxy=localhost,127.0.0.1
-          export ftp_proxy=http://proxy-mu.intel.com:911
-          export https_proxy=http://proxy-dmz.intel.com:912
-          export socks_proxy=proxy-mu.intel.com:1080
-          export http_proxy=http://proxy-dmz.intel.com:911
           export CFLAGS="-D_WIN32_WINNT=0x0A00"
           export CXXFLAGS="-D_WIN32_WINNT=0x0A00"
           /usr/bin/update-ca-trust
