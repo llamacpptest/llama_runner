@@ -120,6 +120,11 @@ jobs:
           export PATH="/mingw64/bin:/usr/bin:$PATH"
           export CFLAGS="-D_WIN32_WINNT=0x0A00"
           export CXXFLAGS="-D_WIN32_WINNT=0x0A00"
+          export http_proxy="http://proxy-dmz.intel.com:911"
+          export https_proxy="http://proxy-dmz.intel.com:912"
+          export ftp_proxy="http://proxy-mu.intel.com:911"
+          export socks_proxy="proxy-mu.intel.com:1080"
+          export no_proxy="localhost,127.0.0.1"
           /usr/bin/update-ca-trust
           LLAMA_FATAL_WARNINGS=OFF GG_BUILD_NINJA=1 GG_BUILD_VULKAN=1 GG_BUILD_LOW_PERF=1 \
             bash ./ci/run.sh ./results/llama.cpp ./mnt/llama.cpp
