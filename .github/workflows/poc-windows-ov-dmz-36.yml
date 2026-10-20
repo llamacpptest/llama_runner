@@ -1,6 +1,6 @@
-# Minimalist PoC probe for Windows self-hosted runner ov-dmz-36
-# Tests basic system info, GPU, and toolchain availability
-# With Intel DMZ proxy configuration for network access
+# Windows self-hosted runner ov-dmz-36
+# Tests system info, GPU, and toolchain availability.
+# Applies a workspace-only HTTP proxy workaround before building.
 name: PoC Windows probe (ov-dmz-36) - Minimal
 
 on:
@@ -18,12 +18,6 @@ jobs:
     runs-on: [self-hosted, X64, Windows, ov-dmz-36]
 
     steps:
-      - name: Disable SSL verification for GitHub REST API download
-        shell: powershell
-        run: |
-          [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-
       - name: Clone Repository
         id: checkout
         uses: actions/checkout@v6
@@ -62,7 +56,6 @@ jobs:
             Select-Object Name, DriverVersion, AdapterRAM |
             Format-Table -AutoSize
 
-
       - name: Disk Information
         shell: powershell
         run: |
@@ -76,7 +69,7 @@ jobs:
         run: |
           Write-Host "=== Checking Available Tools ==="
           $tools = @("git", "python", "cmake", "ninja", "vulkaninfo")
-          
+
           foreach ($tool in $tools) {
             $cmd = Get-Command $tool -ErrorAction SilentlyContinue
             if ($cmd) {
@@ -106,7 +99,51 @@ jobs:
           echo "Current directory: $(pwd)"
           echo ""
           echo "=== PATH ==="
-          echo $PATH
+          echo "$PATH"
+
+      - name: Configure HTTP proxy support for ggml.ai tests
+        shell: C:\msys64\usr\bin\bash.exe -e {0}
+        run: |
+          export PATH="/mingw64/bin:/usr/bin:$PATH"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("common/http.h")
+          text = path.read_text(encoding="utf-8")
+          anchor = "    cli.set_follow_location(true);"
+
+          if text.count(anchor) != 1:
+              raise SystemExit("HTTP client code changed; review proxy patch")
+          if text.count("#pragma once") != 1:
+              raise SystemExit("Unexpected header structure; review proxy patch")
+
+          replacement = "\n".join([
+              "    // CI-only proxy configuration for external download tests.",
+              '    if (parts.scheme == "http" && parts.host == "ggml.ai") {',
+              '        const char * proxy = std::getenv("http_proxy");',
+              "        if (proxy && *proxy) {",
+              "            const auto p = common_http_parse_url(proxy);",
+              '            if (p.scheme != "http" || p.host.empty() ||',
+              "                p.port < 1 || p.port > 65535) {",
+              '                throw std::runtime_error("Invalid CI HTTP proxy");',
+              "            }",
+              "            cli.set_proxy(p.host.c_str(), p.port);",
+              "        }",
+              "    }",
+              "",
+              anchor,
+          ])
+
+          text = text.replace(
+              "#pragma once", "#pragma once\n#include <cstdlib>", 1
+          )
+          text = text.replace(anchor, replacement, 1)
+          path.write_text(text, encoding="utf-8")
+          print("Applied workspace-only proxy patch to common/http.h")
+          PY
+
+          git diff --check
+          git diff -- common/http.h
 
       - name: Run actual test
         shell: C:\msys64\usr\bin\bash.exe -e {0}
@@ -116,30 +153,21 @@ jobs:
           ftp_proxy: http://proxy-mu.intel.com:911
           socks_proxy: proxy-mu.intel.com:1080
           no_proxy: localhost,127.0.0.1
-          ALL_PROXY: http://proxy-dmz.intel.com:911
-          CURL_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
         run: |
           export PATH="/mingw64/bin:/usr/bin:$PATH"
           export CFLAGS="-D_WIN32_WINNT=0x0A00"
           export CXXFLAGS="-D_WIN32_WINNT=0x0A00"
-          export http_proxy="http://proxy-dmz.intel.com:911"
-          export https_proxy="http://proxy-dmz.intel.com:912"
-          export ftp_proxy="http://proxy-mu.intel.com:911"
-          export socks_proxy="proxy-mu.intel.com:1080"
-          export no_proxy="localhost,127.0.0.1"
-          export ALL_PROXY="http://proxy-dmz.intel.com:911"
-          export CURL_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
           /usr/bin/update-ca-trust
           LLAMA_FATAL_WARNINGS=OFF GG_BUILD_NINJA=1 GG_BUILD_VULKAN=1 GG_BUILD_LOW_PERF=1 \
             bash ./ci/run.sh ./results/llama.cpp ./mnt/llama.cpp
-      
+
       - name: Repository Information
-        shell: bash
+        shell: C:\msys64\usr\bin\bash.exe -e {0}
         run: |
           echo "=== Repository Information ==="
-          echo "Repository: ${{ github.repository }}"
-          echo "Branch: ${{ github.ref }}"
-          echo "Commit: ${{ github.sha }}"
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Branch: $GITHUB_REF"
+          echo "Commit: $GITHUB_SHA"
           echo "Files in repo:"
           ls -la | head -20
 
@@ -149,5 +177,4 @@ jobs:
           Write-Host ""
           Write-Host "=== PROBE SUMMARY === "
           Write-Host "Runner: ov-dmz-36"
-          Write-Host "Status: All basic checks completed"
-          Write-Host "Next: Review logs to determine what needs to be installed"
+          Write-Host "Status: All preceding steps completed successfully"
