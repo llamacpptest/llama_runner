@@ -1,6 +1,6 @@
 # Minimalist PoC probe for Windows self-hosted runner ov-dmz-36
 # Tests basic system info, GPU, and toolchain availability
-# No package installation, no proxy configuration
+# With Intel DMZ proxy configuration for network access
 name: PoC Windows probe (ov-dmz-36) - Minimal
 
 on:
@@ -110,6 +110,12 @@ jobs:
 
       - name: Run actual test
         shell: C:\msys64\usr\bin\bash.exe -e {0}
+        env:
+          http_proxy: http://proxy-dmz.intel.com:911
+          https_proxy: http://proxy-dmz.intel.com:912
+          ftp_proxy: http://proxy-mu.intel.com:911
+          socks_proxy: proxy-mu.intel.com:1080
+          no_proxy: localhost,127.0.0.1
         run: |
           export PATH="/mingw64/bin:/usr/bin:$PATH"
           export CFLAGS="-D_WIN32_WINNT=0x0A00"
