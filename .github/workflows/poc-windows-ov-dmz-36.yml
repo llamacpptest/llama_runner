@@ -131,6 +131,6 @@ jobs:
         shell: powershell
         run: |
           Write-Host ""
-          Write-Host "=== PROBE SUMMARY === "
+          Write-Host "=== PROBE SUMMARY ==="
           Write-Host "Runner: ov-dmz-36"
           Write-Host "Status: All preceding steps completed successfully"
