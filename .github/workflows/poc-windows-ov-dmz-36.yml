@@ -109,21 +109,3 @@ jobs:
           /usr/bin/update-ca-trust
           LLAMA_FATAL_WARNINGS=OFF GG_BUILD_NINJA=1 GG_BUILD_VULKAN=1 GG_BUILD_LOW_PERF=1 \
             bash ./ci/run.sh ./results/llama.cpp ./mnt/llama.cpp
-
-      - name: Repository Information
-        shell: C:\msys64\usr\bin\bash.exe -e {0}
-        run: |
-          echo "=== Repository Information ==="
-          echo "Repository: $GITHUB_REPOSITORY"
-          echo "Branch: $GITHUB_REF"
-          echo "Commit: $GITHUB_SHA"
-          echo "Files in repo:"
-          ls -la | head -20
-
-      - name: Summary Report
-        shell: powershell
-        run: |
-          Write-Host ""
-          Write-Host "=== PROBE SUMMARY ==="
-          Write-Host "Runner: ov-dmz-36"
-          Write-Host "Status: All preceding steps completed successfully"
