@@ -5,6 +5,7 @@
 #include "speculative.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <string>
 #include <vector>
@@ -364,6 +365,23 @@ static void test(void) {
 #endif // _WIN32
 
     printf("test-arg-parser: test download functions\n\n");
+    for (const char * name : {"http_proxy", "https_proxy", "no_proxy"}) {
+        const char * value = std::getenv(name);
+        if (!value) {
+            fprintf(stderr, "test-arg-parser: %s is not set\n", name);
+            continue;
+        }
+        std::string display_value = value;
+        if (std::string(name) != "no_proxy") {
+            const auto scheme = display_value.find("://");
+            const auto auth_start = scheme == std::string::npos ? 0 : scheme + 3;
+            const auto auth_end = display_value.rfind('@');
+            if (auth_end != std::string::npos && auth_end >= auth_start) {
+                display_value.replace(auth_start, auth_end - auth_start, "***");
+            }
+        }
+        fprintf(stderr, "test-arg-parser: %s is set: %s\n", name, display_value.empty() ? "(empty)" : display_value.c_str());
+    }
     const char * GOOD_URL = "http://ggml.ai/";
     const char * BAD_URL  = "http://ggml.ai/404";
 

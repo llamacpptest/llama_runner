@@ -56,7 +56,7 @@ cd $sd/../
 SRC=`pwd`
 
 CMAKE_EXTRA="-DLLAMA_FATAL_WARNINGS=${LLAMA_FATAL_WARNINGS:-ON} -DLLAMA_OPENSSL=OFF -DGGML_SCHED_NO_REALLOC=ON"
-CTEST_EXTRA=""
+CTEST_EXTRA="${CTEST_EXTRA:-}"
 
 # Default to use make unless specified for compatibility
 CMAKE_GENERATOR="Unix Makefiles"
