@@ -8,6 +8,8 @@
 #include "json.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -398,6 +400,61 @@ static int common_download_file_single_online(const std::string & url,
 std::pair<long, std::vector<char>> common_remote_get_content(const std::string          & url,
                                                              const common_remote_params & params) {
     auto [cli, parts] = common_http_client(url);
+
+    const char * proxy_env = std::getenv(parts.scheme == "https" ? "https_proxy" : "http_proxy");
+    if (proxy_env && *proxy_env) {
+        bool bypass_proxy = false;
+        if (const char * no_proxy = std::getenv("no_proxy")) {
+            std::string host = parts.host;
+            std::transform(host.begin(), host.end(), host.begin(), [](unsigned char ch) { return std::tolower(ch); });
+            for (auto entry : string_split<std::string>(no_proxy, ',')) {
+                entry = string_strip(entry);
+                if (entry == "*") {
+                    bypass_proxy = true;
+                    break;
+                }
+                const auto colon = entry.rfind(':');
+                if (colon != std::string::npos &&
+                    (entry.find(':') == colon || (entry.front() == '[' && entry.find(']') < colon))) {
+                    if (entry.substr(colon + 1) != std::to_string(parts.port)) {
+                        continue;
+                    }
+                    entry.resize(colon);
+                }
+                if (entry.size() >= 2 && entry.front() == '[' && entry.back() == ']') {
+                    entry = entry.substr(1, entry.size() - 2);
+                }
+                if (!entry.empty() && entry.front() == '.') {
+                    entry.erase(0, 1);
+                }
+                if (entry.empty()) {
+                    continue;
+                }
+                std::transform(entry.begin(), entry.end(), entry.begin(), [](unsigned char ch) { return std::tolower(ch); });
+                if (host == entry || (host.size() > entry.size() &&
+                    host.compare(host.size() - entry.size(), entry.size(), entry) == 0 &&
+                    host[host.size() - entry.size() - 1] == '.')) {
+                    bypass_proxy = true;
+                    break;
+                }
+            }
+        }
+        if (!bypass_proxy) {
+            common_http_url proxy;
+            try {
+                proxy = common_http_parse_url(proxy_env);
+            } catch (const std::exception &) {
+                throw std::invalid_argument("invalid proxy URL");
+            }
+            if (proxy.scheme != "http" || proxy.host.empty() || proxy.port < 1 || proxy.port > 65535) {
+                throw std::invalid_argument("proxy must be an HTTP URL with a valid host and port");
+            }
+            cli.set_proxy(proxy.host, proxy.port);
+            if (!proxy.user.empty()) {
+                cli.set_proxy_basic_auth(proxy.user, proxy.password);
+            }
+        }
+    }
 
     httplib::Headers headers;
     for (const auto & h : params.headers) {

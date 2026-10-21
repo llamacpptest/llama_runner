@@ -482,6 +482,75 @@ static void test_task_assembly() {
     g_repos.clear();
 }
 
+static void test_remote_proxy(int port) {
+    g_context = "remote proxy environment";
+    const std::map<std::string, std::string> saved_env = {
+        {"http_proxy", common_get_env("http_proxy")},
+        {"https_proxy", common_get_env("https_proxy")},
+        {"no_proxy", common_get_env("no_proxy")},
+    };
+    for (const auto & entry : saved_env) {
+        common_set_env(entry.first, "");
+    }
+
+    const std::string endpoint = "http://127.0.0.1:" + std::to_string(port);
+    common_remote_params params;
+    params.timeout = 2;
+    auto check = [&](const std::string & url, const std::string & expected) {
+        const auto response = common_remote_get_content(url, params);
+        REQUIRE(response.first == 200);
+        REQUIRE_EQ(std::string(response.second.begin(), response.second.end()), expected);
+    };
+
+    check(endpoint + "/proxy-test", "direct");
+    common_set_env("http_proxy", endpoint);
+    check("http://unresolvable.invalid/proxy-test", "proxy");
+    common_set_env("http_proxy", "http://user:password@127.0.0.1:" + std::to_string(port));
+    check("http://unresolvable.invalid/proxy-test", "authenticated proxy");
+    common_set_env("http_proxy", endpoint);
+
+    for (const auto & exclusion : std::vector<std::string>{
+            "*", "127.0.0.1", " other.invalid, 127.0.0.1 ",
+            "127.0.0.1:" + std::to_string(port), ".LOCALHOST", "localhost"}) {
+        common_set_env("no_proxy", exclusion);
+        const auto host = exclusion.find("127.0.0.1") != std::string::npos ? "127.0.0.1" : "localhost";
+        check("http://" + std::string(host) + ":" + std::to_string(port) + "/proxy-test", "direct");
+    }
+
+    for (const auto & exclusion : std::vector<std::string>{
+            "", "other.invalid", "host", "localhost:0", ", ,"}) {
+        common_set_env("no_proxy", exclusion);
+        check("http://localhost:" + std::to_string(port) + "/proxy-test", "proxy");
+    }
+    common_set_env("no_proxy", "example.invalid");
+    check("http://notexample.invalid/proxy-test", "proxy");
+
+    common_set_env("http_proxy", "socks5://127.0.0.1:1080");
+    common_set_env("no_proxy", "*");
+    check(endpoint + "/proxy-test", "direct");
+    common_set_env("no_proxy", "");
+    try {
+        common_remote_get_content(endpoint + "/proxy-test", params);
+        REQUIRE(false);
+    } catch (const std::invalid_argument &) {
+    }
+
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+    common_set_env("http_proxy", "");
+    common_set_env("https_proxy", "socks5://127.0.0.1:1080");
+    check(endpoint + "/proxy-test", "direct");
+    try {
+        common_remote_get_content("https://unresolvable.invalid/proxy-test", params);
+        REQUIRE(false);
+    } catch (const std::invalid_argument &) {
+    }
+#endif
+
+    for (const auto & entry : saved_env) {
+        common_set_env(entry.first, entry.second);
+    }
+}
+
 int main(void) {
     // unbuffered, so a crash cannot swallow the reports already printed
     setvbuf(stdout, nullptr, _IONBF, 0);
@@ -495,7 +564,20 @@ int main(void) {
     // https on the builds without TLS support
     httplib::Server server;
     serve_repos(server);
+    server.Get("/proxy-test", [](const httplib::Request &, httplib::Response & res) {
+        res.set_content("direct", "text/plain");
+    });
+    server.Get(R"(http://.*/proxy-test)", [](const httplib::Request & req, httplib::Response & res) {
+        const auto auth = req.get_header_value("Proxy-Authorization");
+        if (auth.empty()) {
+            res.set_content("proxy", "text/plain");
+        } else {
+            REQUIRE_EQ(auth, "Basic dXNlcjpwYXNzd29yZA==");
+            res.set_content("authenticated proxy", "text/plain");
+        }
+    });
     int port = server.bind_to_any_port("127.0.0.1");
+    REQUIRE(port > 0);
 
     // isolate the cache, its location is read once so it is set
     // before anything else
@@ -508,6 +590,7 @@ int main(void) {
     server.wait_until_ready();
     common_set_env("MODEL_ENDPOINT", "http://127.0.0.1:" + std::to_string(port) + "/");
 
+    test_remote_proxy(port);
     test_plan_resolution();
     test_task_assembly();
 

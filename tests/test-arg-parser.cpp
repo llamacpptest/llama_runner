@@ -367,10 +367,25 @@ static void test(void) {
     const char * GOOD_URL = "http://ggml.ai/";
     const char * BAD_URL  = "http://ggml.ai/404";
 
+    auto get_content = [](const char * url, long expected_status) {
+        fprintf(stderr, "test-arg-parser: requesting %s (expected HTTP %ld)\n", url, expected_status);
+        std::pair<long, std::vector<char>> res;
+        try {
+            res = common_remote_get_content(url, {});
+        } catch (const std::exception & e) {
+            fprintf(stderr, "test-arg-parser: HTTP request to %s failed: %s; check network connectivity and http_proxy, https_proxy, no_proxy settings\n", url, e.what());
+            throw;
+        }
+        if (res.first != expected_status) {
+            fprintf(stderr, "test-arg-parser: HTTP request to %s returned %ld, expected %ld\n", url, res.first, expected_status);
+        }
+        assert(res.first == expected_status);
+        return res;
+    };
+
     {
         printf("test-arg-parser: test good URL\n\n");
-        auto res = common_remote_get_content(GOOD_URL, {});
-        assert(res.first == 200);
+        auto res = get_content(GOOD_URL, 200);
         assert(res.second.size() > 0);
         std::string str(res.second.data(), res.second.size());
         assert(str.find("llama.cpp") != std::string::npos);
@@ -378,8 +393,7 @@ static void test(void) {
 
     {
         printf("test-arg-parser: test bad URL\n\n");
-        auto res = common_remote_get_content(BAD_URL, {});
-        assert(res.first == 404);
+        get_content(BAD_URL, 404);
     }
 
     {
@@ -398,6 +412,7 @@ static void test(void) {
 }
 
 int main(void) {
+    setvbuf(stdout, nullptr, _IONBF, 0);
     try {
         test();
     } catch (std::exception & e) {
