@@ -35,8 +35,6 @@ jobs:
 
       - name: Test
         id: ggml-ci
-        env:
-          CTEST_EXTRA: "-V"
         run: |
           vulkaninfo --summary
           GG_BUILD_VULKAN=1 bash ./ci/run.sh ~/results/llama.cpp ~/mnt/llama.cpp
