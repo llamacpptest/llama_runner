@@ -2,6 +2,8 @@
 
 #include <cpp-httplib/httplib.h>
 
+#include <cstdlib>
+
 #ifdef _WIN32
 #include <winsock2.h>
 #include <windows.h>
@@ -119,6 +121,13 @@ static std::pair<httplib::Client, common_http_url> common_http_client(const std:
 
     if (!parts.user.empty()) {
         cli.set_basic_auth(parts.user, parts.password);
+    }
+
+    // httplib does not read proxy env vars; honor them for non-loopback hosts
+    const char * proxy_env = std::getenv(parts.scheme == "https" ? "https_proxy" : "http_proxy");
+    if (proxy_env && *proxy_env && parts.host != "localhost" && parts.host != "127.0.0.1" && parts.host != "::1") {
+        const auto proxy = common_http_parse_url(proxy_env);
+        cli.set_proxy(proxy.host, proxy.port);
     }
 
     cli.set_follow_location(true);
