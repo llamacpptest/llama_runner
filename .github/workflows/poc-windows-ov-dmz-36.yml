@@ -101,50 +101,6 @@ jobs:
           echo "=== PATH ==="
           echo "$PATH"
 
-      - name: Configure HTTP proxy support for ggml.ai tests
-        shell: C:\msys64\usr\bin\bash.exe -e {0}
-        run: |
-          export PATH="/mingw64/bin:/usr/bin:$PATH"
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("common/http.h")
-          text = path.read_text(encoding="utf-8")
-          anchor = "    cli.set_follow_location(true);"
-
-          if text.count(anchor) != 1:
-              raise SystemExit("HTTP client code changed; review proxy patch")
-          if text.count("#pragma once") != 1:
-              raise SystemExit("Unexpected header structure; review proxy patch")
-
-          replacement = "\n".join([
-              "    // CI-only proxy configuration for external download tests.",
-              '    if (parts.scheme == "http" && parts.host == "ggml.ai") {',
-              '        const char * proxy = std::getenv("http_proxy");',
-              "        if (proxy && *proxy) {",
-              "            const auto p = common_http_parse_url(proxy);",
-              '            if (p.scheme != "http" || p.host.empty() ||',
-              "                p.port < 1 || p.port > 65535) {",
-              '                throw std::runtime_error("Invalid CI HTTP proxy");',
-              "            }",
-              "            cli.set_proxy(p.host.c_str(), p.port);",
-              "        }",
-              "    }",
-              "",
-              anchor,
-          ])
-
-          text = text.replace(
-              "#pragma once", "#pragma once\n#include <cstdlib>", 1
-          )
-          text = text.replace(anchor, replacement, 1)
-          path.write_bytes(text.encode("utf-8"))
-          print("Applied workspace-only proxy patch to common/http.h")
-          PY
-
-          git diff --check
-          git diff -- common/http.h
-
       - name: Run actual test
         shell: C:\msys64\usr\bin\bash.exe -e {0}
         env:
