@@ -6,7 +6,7 @@
 name: PoC Vulkan B70 (self-hosted)
 
 on:
-  workflow_dispatch:        # manual "Run workflow" button 
+  workflow_dispatch:        # manual "Run workflow" button
   push:
     branches: [main]
     paths:
