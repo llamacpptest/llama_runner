@@ -46,11 +46,12 @@ jobs:
         shell: cmd
         run: |
           if not exist C:\opencl\install\lib\OpenCL.lib (
+            if exist C:\opencl rmdir /s /q C:\opencl
             git clone --depth 1 https://github.com/KhronosGroup/OpenCL-Headers C:\opencl\headers || exit /b 1
             git clone --depth 1 https://github.com/KhronosGroup/OpenCL-ICD-Loader C:\opencl\loader || exit /b 1
             cmake -S C:\opencl\headers -B C:\opencl\headers\build -DCMAKE_INSTALL_PREFIX=C:\opencl\install || exit /b 1
             cmake --build C:\opencl\headers\build --target install || exit /b 1
-            cmake -S C:\opencl\loader -B C:\opencl\loader\build -A x64 -DOPENCL_ICD_LOADER_HEADERS_DIR=C:\opencl\headers -DCMAKE_INSTALL_PREFIX=C:\opencl\install -DBUILD_TESTING=OFF || exit /b 1
+            cmake -S C:\opencl\loader -B C:\opencl\loader\build -G "Visual Studio 18 2026" -A x64 -DOPENCL_ICD_LOADER_HEADERS_DIR=C:\opencl\headers -DCMAKE_INSTALL_PREFIX=C:\opencl\install -DBUILD_TESTING=OFF || exit /b 1
             cmake --build C:\opencl\loader\build --config Release --target install || exit /b 1
           )
 
