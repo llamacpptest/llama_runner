@@ -1,5 +1,5 @@
 # Windows self-hosted runner ov-dmz-36
-# Builds the OpenVINO backend and runs the main ctest set.
+# Builds the OpenVINO backend and runs the main ctest set. 
 name: PoC Windows OpenVINO (ov-dmz-36)
 
 on:
