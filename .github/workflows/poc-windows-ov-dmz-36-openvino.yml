@@ -42,28 +42,23 @@ jobs:
           where ninja
           "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -all -products *
 
-      - name: Install OpenCL using vcpkg
+      - name: Build OpenCL (headers + ICD loader)
         shell: cmd
         run: |
-          rem TEMP: let vcpkg's curl trust the proxy CA (MSYS2 bundle) until the host trusts it
-          dir /s /b C:\msys64\etc\pki
-          dir /b C:\msys64\usr\ssl\certs
-          set CURL_CA_BUNDLE=C:\msys64\etc\pki\ca-trust\extracted\pem\tls-ca-bundle.pem
-          if not exist %CURL_CA_BUNDLE% (
-            echo CA bundle not found: %CURL_CA_BUNDLE%
-            exit /b 1
+          if not exist C:\opencl\install\lib\OpenCL.lib (
+            git clone --depth 1 https://github.com/KhronosGroup/OpenCL-Headers C:\opencl\headers || exit /b 1
+            git clone --depth 1 https://github.com/KhronosGroup/OpenCL-ICD-Loader C:\opencl\loader || exit /b 1
+            cmake -S C:\opencl\headers -B C:\opencl\headers\build -DCMAKE_INSTALL_PREFIX=C:\opencl\install || exit /b 1
+            cmake --build C:\opencl\headers\build --target install || exit /b 1
+            cmake -S C:\opencl\loader -B C:\opencl\loader\build -A x64 -DOPENCL_ICD_LOADER_HEADERS_DIR=C:\opencl\headers -DCMAKE_INSTALL_PREFIX=C:\opencl\install -DBUILD_TESTING=OFF || exit /b 1
+            cmake --build C:\opencl\loader\build --config Release --target install || exit /b 1
           )
-          if not exist C:\vcpkg\vcpkg.exe (
-            git clone https://github.com/microsoft/vcpkg C:\vcpkg || exit /b 1
-            call C:\vcpkg\bootstrap-vcpkg.bat || exit /b 1
-          )
-          C:\vcpkg\vcpkg install opencl || exit /b 1
 
       - name: Build and test
         shell: cmd
         run: |
           for /d %%i in (openvino_toolkit\*) do call "%%i\setupvars.bat"
           set GGML_OPENVINO_DEVICE=GPU
-          cmake -B build\ReleaseOV -G "Visual Studio 18 2026" -A x64 -DGGML_OPENVINO=ON -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake || exit /b 1
+          cmake -B build\ReleaseOV -G "Visual Studio 18 2026" -A x64 -DGGML_OPENVINO=ON -DOpenCL_INCLUDE_DIR=C:\opencl\install\include -DOpenCL_LIBRARY=C:\opencl\install\lib\OpenCL.lib || exit /b 1
           cmake --build build\ReleaseOV --config Release -- /m || exit /b 1
           ctest --test-dir build\ReleaseOV -L main -E "test-llama-archs|^test-recurrent-state-|test-save-load-state" -C Release --timeout 3000 --no-tests=error || exit /b 1
