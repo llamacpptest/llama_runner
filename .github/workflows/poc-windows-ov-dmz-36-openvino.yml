@@ -45,6 +45,14 @@ jobs:
       - name: Install OpenCL using vcpkg
         shell: cmd
         run: |
+          rem TEMP: let vcpkg's curl trust the proxy CA (MSYS2 bundle) until the host trusts it
+          dir /s /b C:\msys64\etc\pki
+          dir /b C:\msys64\usr\ssl\certs
+          set CURL_CA_BUNDLE=C:\msys64\etc\pki\ca-trust\extracted\pem\tls-ca-bundle.pem
+          if not exist %CURL_CA_BUNDLE% (
+            echo CA bundle not found: %CURL_CA_BUNDLE%
+            exit /b 1
+          )
           if not exist C:\vcpkg\vcpkg.exe (
             git clone https://github.com/microsoft/vcpkg C:\vcpkg || exit /b 1
             call C:\vcpkg\bootstrap-vcpkg.bat || exit /b 1
