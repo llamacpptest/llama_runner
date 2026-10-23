@@ -42,11 +42,20 @@ jobs:
           where ninja
           "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -all -products *
 
+      - name: Install OpenCL using vcpkg
+        shell: cmd
+        run: |
+          if not exist C:\vcpkg\vcpkg.exe (
+            git clone https://github.com/microsoft/vcpkg C:\vcpkg || exit /b 1
+            call C:\vcpkg\bootstrap-vcpkg.bat || exit /b 1
+          )
+          C:\vcpkg\vcpkg install opencl || exit /b 1
+
       - name: Build and test
         shell: cmd
         run: |
           for /d %%i in (openvino_toolkit\*) do call "%%i\setupvars.bat"
           set GGML_OPENVINO_DEVICE=GPU
-          cmake -B build\ReleaseOV -G "Visual Studio 18 2026" -A x64 -DGGML_OPENVINO=ON || exit /b 1
+          cmake -B build\ReleaseOV -G "Visual Studio 18 2026" -A x64 -DGGML_OPENVINO=ON -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake || exit /b 1
           cmake --build build\ReleaseOV --config Release -- /m || exit /b 1
           ctest --test-dir build\ReleaseOV -L main -E "test-llama-archs|^test-recurrent-state-|test-save-load-state" -C Release --timeout 3000 --no-tests=error || exit /b 1
