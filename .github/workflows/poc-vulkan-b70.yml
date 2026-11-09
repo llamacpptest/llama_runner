@@ -1,54 +1,83 @@
-       - name: Test
-         id: ggml-ci
-         run: |
-           vulkaninfo --summary
-           GG_BUILD_VULKAN=1 bash ./ci/run.sh ~/results/llama.cpp ~/mnt/llama.cpp
-+
-+      - name: Print Docker and GPU details
-+        if: ${{ always() }}
-+        continue-on-error: true
-+        timeout-minutes: 5
-+        shell: bash
-+        run: |
-+          echo "=== Runner and GPU devices ==="
-+          uname -srm
-+          id
-+          ls -ln /dev/dri || true
-+
-+          if ! command -v docker >/dev/null 2>&1; then
-+            echo "Docker CLI is not installed or not on PATH."
-+            exit 0
-+          fi
-+
-+          echo "=== Docker versions ==="
-+          docker version || true
-+
-+          if ! docker info >/dev/null 2>&1; then
-+            echo "Docker daemon is unavailable or inaccessible."
-+            exit 0
-+          fi
-+
-+          echo "=== Docker platform ==="
-+          docker info --format 'OS={{.OperatingSystem}} Architecture={{.Architecture}} StorageDriver={{.Driver}}'
-+
-+          echo "=== Images and registry digests ==="
-+          docker image ls --digests --no-trunc
-+
-+          echo "=== Containers ==="
-+          docker ps -a --format 'ID={{.ID}} Name={{.Names}} Image={{.Image}} Status={{.Status}}'
-+
-+          echo "=== Container configuration (excluding environment variables) ==="
-+          while IFS= read -r cid; do
-+            [ -n "$cid" ] || continue
-+            docker inspect --format 'Name={{.Name}}
-+          ImageReference={{.Config.Image}}
-+          ImageID={{.Image}}
-+          User={{.Config.User}}
-+          WorkingDir={{.Config.WorkingDir}}
-+          Privileged={{.HostConfig.Privileged}}
-+          NetworkMode={{.HostConfig.NetworkMode}}
-+          Devices={{json .HostConfig.Devices}}
-+          GroupAdd={{json .HostConfig.GroupAdd}}
-+          Mounts={{json .Mounts}}
-+          PortBindings={{json .HostConfig.PortBindings}}' "$cid" || true
-+          done < <(docker ps -aq)
+name: PoC Vulkan B70 (self-hosted)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/poc-vulkan-b70.yml'
+
+permissions:
+  contents: read
+
+env:
+  GGML_NLOOP: 3
+  GGML_N_THREADS: 1
+  LLAMA_ARG_LOG_COLORS: 1
+  LLAMA_ARG_LOG_PREFIX: 1
+  LLAMA_ARG_LOG_TIMESTAMPS: 1
+
+jobs:
+  gpu-vulkan-intel-b70:
+    runs-on: [self-hosted, Linux, X64, ov-llama-dmz-01]
+
+    steps:
+      - name: Clone
+        id: checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Print Docker and GPU details
+        if: ${{ always() }}
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          echo "=== Runner and GPU devices ==="
+          uname -srm
+          id
+          ls -ln /dev/dri || true
+
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "Docker CLI is not installed or not on PATH."
+            exit 0
+          fi
+
+          echo "=== Docker versions ==="
+          docker version || true
+
+          if ! docker info >/dev/null 2>&1; then
+            echo "Docker daemon is unavailable or inaccessible."
+            exit 0
+          fi
+
+          echo "=== Docker platform ==="
+          docker info --format 'OS={{.OperatingSystem}} Architecture={{.Architecture}} StorageDriver={{.Driver}}'
+
+          echo "=== Images and registry digests ==="
+          docker image ls --digests --no-trunc
+
+          echo "=== Containers ==="
+          docker ps -a --format 'ID={{.ID}} Name={{.Names}} Image={{.Image}} Status={{.Status}}'
+
+          echo "=== Container configuration (excluding environment variables) ==="
+          while IFS= read -r cid; do
+            [ -n "$cid" ] || continue
+            docker inspect --format 'Name={{.Name}}
+          ImageReference={{.Config.Image}}
+          ImageID={{.Image}}
+          User={{.Config.User}}
+          WorkingDir={{.Config.WorkingDir}}
+          Privileged={{.HostConfig.Privileged}}
+          NetworkMode={{.HostConfig.NetworkMode}}
+          Devices={{json .HostConfig.Devices}}
+          GroupAdd={{json .HostConfig.GroupAdd}}
+          Mounts={{json .Mounts}}
+          PortBindings={{json .HostConfig.PortBindings}}' "$cid" || true
+          done < <(docker ps -aq)
+      - name: Test
+        id: ggml-ci
+        run: |
+          vulkaninfo --summary
+          GG_BUILD_VULKAN=1 bash ./ci/run.sh ~/results/llama.cpp ~/mnt/llama.cpp
