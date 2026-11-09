@@ -113,12 +113,15 @@ jobs:
             [ -f "$f" ] && { echo "--- $f"; grep -v -E '^\s*#|^\s*$' "$f"; }
           done
           echo "--- apt policy for the key packages"
-          apt-cache policy build-essential cmake ninja-build glslc libvulkan-dev spirv-headers libssl-dev ocl-icd-opencl-dev opencl-headers opencl-clhpp-headers 2>/dev/null | grep -E '^[a-z]|Installed|Candidate|http' | head -60
+          apt-cache policy build-essential gcc-14 g++-14 gcc-15 cmake ninja-build ccache zip 7zip glslc libvulkan-dev spirv-headers libssl-dev libtbb12 ocl-icd-opencl-dev opencl-headers opencl-clhpp-headers 2>/dev/null | grep -E '^[a-z]|Installed|Candidate|http' | head -100
           echo "--- CA certificates added locally"
           ls /usr/local/share/ca-certificates 2>/dev/null
 
           sec "4. Proxy settings (names and values of proxy variables only)"
           env | grep -i -E '^(http|https|no|ftp|all)_proxy=' | sort
+
+          sec "4b. GPU and build related environment variables (names starting with GGML, GG, VK, MESA, ONEAPI, ZE, SYCL, LLAMA, INTEL)"
+          env | grep -E '^(GGML|GG|VK|MESA|ONEAPI|ZE|SYCL|LLAMA|INTEL)_' | sort
 
           sec "5. Tool versions"
           ver gcc --version
@@ -162,8 +165,10 @@ jobs:
           ls /usr/include/vulkan 2>/dev/null | head -5
           echo "--- ICD files"
           ls -l /usr/share/vulkan/icd.d /etc/vulkan/icd.d 2>/dev/null
-          echo "--- vulkaninfo --summary"
-          vulkaninfo --summary 2>&1 | head -60
+          echo "--- vulkaninfo --summary: every Vulkan device (full output saved to host-inventory/vulkaninfo-summary.txt)"
+          vulkaninfo --summary > host-inventory/vulkaninfo-summary.txt 2>&1
+          grep -E '^GPU[0-9]+:|apiVersion|driverVersion|deviceName|deviceType|driverName|driverInfo|vendorID|deviceID' host-inventory/vulkaninfo-summary.txt
+          echo "number of Vulkan devices: $(grep -c -E '^GPU[0-9]+:' host-inventory/vulkaninfo-summary.txt)"
 
           sec "8. OpenCL, Level Zero and OpenVINO (needed by the OpenVINO backend)"
           echo "--- OpenCL headers (the OpenVINO GPU wrapper needs CL/cl2.hpp)"
@@ -182,6 +187,12 @@ jobs:
           ls -ln /dev/dri
           lspci 2>/dev/null | grep -i -E 'vga|display|3d'
           lsmod 2>/dev/null | grep -E '^(i915|xe) '
+          echo "--- which kernel driver and PCI id each card uses"
+          lspci -nn 2>/dev/null | grep -i -E 'vga|display|3d'
+          for c in /sys/class/drm/card[0-9]; do
+            [ -d "$c/device" ] || continue
+            echo "$(basename "$c"): vendor=$(cat "$c/device/vendor" 2>/dev/null) device=$(cat "$c/device/device" 2>/dev/null) driver=$(basename "$(readlink -f "$c/device/driver" 2>/dev/null)")"
+          done
 
           sec "10. Resources (for workspace_size and parallelism)"
           echo "CPUs: $(nproc)"
@@ -217,10 +228,22 @@ jobs:
             for b in llama-cli llama-server llama-bench; do
               [ -x "$d/$b" ] && { echo "--- ldd $d/$b"; ldd "$d/$b" 2>&1; }
             done
-            for lib in "$d"/libggml-vulkan.so "$d"/libggml-base.so "$d"/libggml-cpu*.so; do
+            for lib in "$d"/libllama*.so "$d"/libggml.so "$d"/libggml-vulkan.so "$d"/libggml-base.so "$d"/libggml-cpu*.so; do
               [ -f "$lib" ] && { echo "--- ldd $lib"; ldd "$lib" 2>&1; }
             done
           done
+
+          echo
+          echo "=== size of the build directories and results (for workspace_size) ==="
+          du -sh build* ~/results/llama.cpp 2>/dev/null
+
+          echo
+          echo "=== glslc features and Vulkan detection, from llama.cpp's own CMake logs (compare with other Ubuntu versions) ==="
+          grep -r -h -E 'supported by glslc|Found Vulkan|Vulkan found|Including Vulkan backend|ggml commit|CMAKE_BUILD_TYPE|C compiler identification|CXX compiler identification' \
+            ~/results/llama.cpp 2>/dev/null | sort -u | head -40
+          echo "--- CMake and build logs copied into the artifact"
+          find ~/results/llama.cpp -maxdepth 2 -name '*.log' -size -5M -exec cp {} host-inventory/ \; -print 2>/dev/null | head -20
+
           echo
           echo "=== ccache ==="
           ccache -s 2>&1 | head -20
@@ -233,3 +256,4 @@ jobs:
           name: host-inventory-ov-llama-dmz-02
           path: host-inventory/
           if-no-files-found: ignore
+
