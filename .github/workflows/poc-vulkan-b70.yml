@@ -19,7 +19,7 @@ env:
 
 jobs:
   gpu-vulkan-intel-b70:
-    runs-on: [self-hosted, Linux, X64, ov-llama-dmz-01]
+    runs-on: [self-hosted, Linux, X64, ov-llama-dmz-02]
 
     steps:
       - name: Clone
