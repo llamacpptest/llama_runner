@@ -76,8 +76,160 @@ jobs:
           Mounts={{json .Mounts}}
           PortBindings={{json .HostConfig.PortBindings}}' "$cid" || true
           done < <(docker ps -aq)
+
+      # Added: everything we need to define the Quickbuild Docker image (llamacpp-ubuntu-24.04) from a host where the
+      # Vulkan build is known to work. Read-only, never fails the job, and prints no environment variables except proxy settings.
+      - name: Host inventory for the Docker image definition
+        if: ${{ always() }}
+        continue-on-error: true
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set +e
+          mkdir -p host-inventory
+          exec > >(tee host-inventory/inventory.txt) 2>&1
+
+          sec() { printf '\n=== %s ===\n' "$1"; }
+          have() { command -v "$1" >/dev/null 2>&1; }
+          # ver <tool> <version flag...>: print the first line of the tool's version output, or NOT FOUND
+          ver() {
+            if have "$1"; then printf '%-16s ' "$1"; "$@" 2>&1 | head -1; else printf '%-16s NOT FOUND\n' "$1"; fi
+          }
+
+          sec "1. Host identity: real machine, VM or container?"
+          hostname
+          echo "systemd-detect-virt: $(systemd-detect-virt 2>&1)"
+          echo "/.dockerenv: $([ -e /.dockerenv ] && echo present || echo absent)"
+          echo "pid 1 cgroup:"; head -3 /proc/1/cgroup
+          uname -a
+          id
+          echo "HOME=$HOME  PWD=$PWD"
+
+          sec "2. OS release"
+          cat /etc/os-release
+
+          sec "3. Package sources (are apt packages coming from an Intel/Artifactory mirror?)"
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+            [ -f "$f" ] && { echo "--- $f"; grep -v -E '^\s*#|^\s*$' "$f"; }
+          done
+          echo "--- apt policy for the key packages"
+          apt-cache policy build-essential cmake ninja-build glslc libvulkan-dev spirv-headers libssl-dev ocl-icd-opencl-dev opencl-headers opencl-clhpp-headers 2>/dev/null | grep -E '^[a-z]|Installed|Candidate|http' | head -60
+          echo "--- CA certificates added locally"
+          ls /usr/local/share/ca-certificates 2>/dev/null
+
+          sec "4. Proxy settings (names and values of proxy variables only)"
+          env | grep -i -E '^(http|https|no|ftp|all)_proxy=' | sort
+
+          sec "5. Tool versions"
+          ver gcc --version
+          ver g++ --version
+          ver cc --version
+          ver c++ --version
+          ver clang --version
+          ver cmake --version
+          ver ninja --version
+          ver make --version
+          ver ccache --version
+          ver git --version
+          ver python3 --version
+          ver pip3 --version
+          ver curl --version
+          ver wget --version
+          ver tar --version
+          ver unzip -v
+          ver zip -v
+          ver 7z i
+          ver pkg-config --version
+          ver glslc --version
+          ver glslangValidator --version
+          ver spirv-val --version
+          ver openssl version
+          ver ldd --version
+          ver vulkaninfo --version
+          ver clinfo --version
+          ver docker --version
+
+          sec "6. Installed packages that matter for the build (name and version)"
+          dpkg-query -W -f='${binary:Package} ${Version}\n' 2>/dev/null \
+            | grep -i -E '^(build-essential|gcc|g\+\+|cpp|clang|cmake|ninja-build|make|ccache|git|curl|wget|tar|unzip|zip|p7zip|7zip|pkg-config|pkgconf|python3|libssl|openssl|libcurl|libvulkan|vulkan|mesa-vulkan|glslc|glslang|libglslang|spirv|libspirv|shaderc|libshaderc|ocl-icd|libocl|opencl|clinfo|intel-opencl|intel-level-zero|libze|level-zero|libigc|libigdfcl|libigfxcmrt|libtbb|libhwloc|libgomp|libomp|libstdc\+\+|libc6|libc-dev|linux-libc-dev|gosu)' \
+            | sort
+          echo "--- full package list saved to host-inventory/dpkg-all.txt ($(dpkg-query -W 2>/dev/null | wc -l) packages)"
+          dpkg-query -W -f='${binary:Package} ${Version}\n' 2>/dev/null | sort > host-inventory/dpkg-all.txt
+
+          sec "7. Vulkan: loader, headers, ICDs, drivers"
+          echo "VULKAN_SDK=${VULKAN_SDK:-<unset>}"
+          pkg-config --modversion vulkan 2>&1
+          ls /usr/include/vulkan 2>/dev/null | head -5
+          echo "--- ICD files"
+          ls -l /usr/share/vulkan/icd.d /etc/vulkan/icd.d 2>/dev/null
+          echo "--- vulkaninfo --summary"
+          vulkaninfo --summary 2>&1 | head -60
+
+          sec "8. OpenCL, Level Zero and OpenVINO (needed by the OpenVINO backend)"
+          echo "--- OpenCL headers (the OpenVINO GPU wrapper needs CL/cl2.hpp)"
+          ls -l /usr/include/CL/cl.h /usr/include/CL/cl2.hpp /usr/include/CL/opencl.hpp 2>&1
+          pkg-config --modversion OpenCL 2>&1
+          echo "--- OpenCL libraries and vendors"
+          ldconfig -p 2>/dev/null | grep -i -E 'libOpenCL|libze_|libtbb'
+          ls -l /etc/OpenCL/vendors 2>/dev/null
+          echo "--- clinfo -l"
+          clinfo -l 2>&1 | head -20
+          echo "--- OpenVINO on this host?"
+          echo "INTEL_OPENVINO_DIR=${INTEL_OPENVINO_DIR:-<unset>}"
+          ls -d /opt/intel* 2>/dev/null
+
+          sec "9. GPU hardware and kernel drivers"
+          ls -ln /dev/dri
+          lspci 2>/dev/null | grep -i -E 'vga|display|3d'
+          lsmod 2>/dev/null | grep -E '^(i915|xe) '
+
+          sec "10. Resources (for workspace_size and parallelism)"
+          echo "CPUs: $(nproc)"
+          lscpu 2>/dev/null | grep -E 'Model name|Thread|Core|Socket'
+          free -h
+          df -h . /tmp "$HOME" 2>/dev/null
+
+          sec "11. How llama.cpp's own CI builds the Vulkan variant (ci/run.sh)"
+          grep -n -i -B1 -A10 'GG_BUILD_VULKAN' ci/run.sh | head -60
+
       - name: Test
         id: ggml-ci
         run: |
           vulkaninfo --summary
           GG_BUILD_VULKAN=1 bash ./ci/run.sh ~/results/llama.cpp ~/mnt/llama.cpp
+
+      # Added: which shared libraries the built binaries need at run time, i.e. what the package (and the image) must carry.
+      - name: Runtime dependencies of the built binaries
+        if: ${{ always() }}
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set +e
+          mkdir -p host-inventory
+          exec > >(tee host-inventory/runtime-deps.txt) 2>&1
+          echo "=== build directories ==="
+          find . -maxdepth 2 -type d -name 'build*' 2>/dev/null
+          for d in $(find . -maxdepth 2 -type d -name 'bin' -path '*build*' 2>/dev/null); do
+            echo
+            echo "=== $d ==="
+            ls -l "$d" | head -60
+            for b in llama-cli llama-server llama-bench; do
+              [ -x "$d/$b" ] && { echo "--- ldd $d/$b"; ldd "$d/$b" 2>&1; }
+            done
+            for lib in "$d"/libggml-vulkan.so "$d"/libggml-base.so "$d"/libggml-cpu*.so; do
+              [ -f "$lib" ] && { echo "--- ldd $lib"; ldd "$lib" 2>&1; }
+            done
+          done
+          echo
+          echo "=== ccache ==="
+          ccache -s 2>&1 | head -20
+
+      - name: Upload host inventory
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: host-inventory-ov-llama-dmz-02
+          path: host-inventory/
+          if-no-files-found: ignore
